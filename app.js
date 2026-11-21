@@ -419,7 +419,52 @@ setInterval(function () { var t = iso(new Date()); if (t !== lastToday) { if (st
 /* ================================================================
    MENU EDITOR – prices, availability, dishes (public site reads the same tables)
    ================================================================ */
-var menu = { cats: [], items: [], q: '', soldOnly: false, editing: null, tags: [], avail: true, loaded: false };
+var menu = { cats: [], items: [], q: '', soldOnly: false, editing: null, tags: [], avail: true, loaded: false, photo: null };
+var BUCKET = 'menu-photos';
+function photoUrl(path, thumb) { return path ? C.SUPABASE_URL + '/storage/v1/object/public/' + BUCKET + '/' + path + (thumb ? '-t' : '') + '.jpg' : ''; }
+/* shrink a picked photo on the phone before upload: full 1200px + square 320px thumbnail */
+function loadBitmap(file) {
+  if (window.createImageBitmap) return createImageBitmap(file, { imageOrientation: 'from-image' }).catch(function () { return createImageBitmap(file); });
+  return new Promise(function (res, rej) { var i = new Image(); i.onload = function () { res(i); }; i.onerror = rej; i.src = URL.createObjectURL(file); });
+}
+function toJpeg(src, w, h, sx, sy, sw, sh) {
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  return new Promise(function (res, rej) { c.toBlob(function (b) { b ? res(b) : rej(new Error('encode')); }, 'image/jpeg', 0.82); });
+}
+function preparePhoto(file) {
+  return loadBitmap(file).then(function (bm) {
+    var W = bm.width, H = bm.height, k = Math.min(1, 1200 / Math.max(W, H)), side = Math.min(W, H);
+    return Promise.all([
+      toJpeg(bm, Math.round(W * k), Math.round(H * k), 0, 0, W, H),
+      toJpeg(bm, 320, 320, (W - side) / 2, (H - side) / 2, side, side)
+    ]);
+  }).then(function (b) { return { full: b[0], thumb: b[1] }; });
+}
+function showPhoto(src) {
+  var img = $('it-photo-img');
+  if (src) { img.src = src; img.hidden = false; $('it-photo-none').hidden = true; } else { img.removeAttribute('src'); img.hidden = true; $('it-photo-none').hidden = false; }
+  $('it-photo-rm').hidden = !src;
+  $('it-photo-pick-lbl').textContent = src ? 'Αλλαγή φωτογραφίας' : 'Επιλογή φωτογραφίας';
+}
+$('it-file').addEventListener('change', function () {
+  var f = this.files && this.files[0]; this.value = ''; if (!f) return;
+  if (!/^image\//.test(f.type) && !/\.(jpe?g|png|webp|heic|heif)$/i.test(f.name)) { $('itErr').textContent = 'Διαλέξτε αρχείο εικόνας.'; $('itErr').hidden = false; return; }
+  $('it-photo-pick-lbl').textContent = 'Επεξεργασία…';
+  preparePhoto(f).then(function (p) {
+    menu.photo.blobs = p; menu.photo.removed = false;
+    if (menu.photo.preview) URL.revokeObjectURL(menu.photo.preview);
+    menu.photo.preview = URL.createObjectURL(p.thumb); showPhoto(menu.photo.preview); $('itErr').hidden = true;
+  }).catch(function () { showPhoto(menu.photo.preview || photoUrl(menu.photo.path, true)); $('itErr').textContent = 'Αυτή η φωτογραφία δεν διαβάζεται. Δοκιμάστε άλλη, ή τραβήξτε screenshot της και ανεβάστε εκείνο.'; $('itErr').hidden = false; });
+});
+$('it-photo-rm').addEventListener('click', function () { menu.photo.blobs = null; menu.photo.removed = true; showPhoto(''); });
+function uploadPhoto(p) {
+  var base = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+  var st = client.storage.from(BUCKET), opt = { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false };
+  return st.upload(base + '.jpg', p.full, opt).then(function (r) { if (r.error) throw r.error; return st.upload(base + '-t.jpg', p.thumb, opt); })
+    .then(function (r) { if (r.error) throw r.error; return base; });
+}
+function removePhotoFiles(path) { if (path) client.storage.from(BUCKET).remove([path + '.jpg', path + '-t.jpg']).catch(function () {}); }
 function eur(n) { return '€' + Number(n).toFixed(2).replace('.', ','); }
 function parsePrice(v) { v = String(v || '').replace('€', '').replace(/\s/g, '').replace(',', '.'); var n = Number(v); return v !== '' && isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null; }
 function mvNote(html) { $('mvNotes').innerHTML = html ? '<div class="note-bar ' + (html.indexOf('!') === 0 ? 'bad' : 'info') + '">' + html.replace(/^!/, '') + '</div>' : ''; }
@@ -445,7 +490,7 @@ function renderMenu() {
     var off = rows.filter(function (i) { return !i.available; }).length;
     h += '<section class="mv-cat"><h2><span>' + esc(c.name_el) + '</span><span>' + rows.length + (off ? ' · ' + off + ' εκτός' : '') + '</span></h2><div class="mv-rows">' +
       rows.map(function (i) {
-        return '<div class="mv-row' + (i.available ? '' : ' off') + '">' +
+        return '<div class="mv-row' + (i.available ? '' : ' off') + (i.photo_path ? ' has-ph' : '') + '">' + (i.photo_path ? '<img class="mv-thumb" loading="lazy" alt="" src="' + esc(photoUrl(i.photo_path, true)) + '">' : '') +
           '<button type="button" class="mv-edit" data-id="' + esc(i.id) + '"><span class="mv-name">' + esc(i.name_el) + '</span><span class="mv-sub">' + esc(i.name_en) + (i.available ? '' : ' · δεν εμφανίζεται') + '</span></button>' +
           '<span class="mv-price">' + eur(i.price) + '</span>' +
           '<button type="button" class="sw" role="switch" aria-checked="' + (!!i.available) + '" aria-label="Διαθέσιμο: ' + esc(i.name_el) + '" data-sw="' + esc(i.id) + '"></button></div>';
@@ -488,6 +533,9 @@ function openItem(it) {
   $('it-price').value = it ? Number(it.price).toFixed(2).replace('.', ',') : '';
   $('it-desc-el').value = it ? it.desc_el : ''; $('it-desc-en').value = it ? it.desc_en : '';
   setItTags(it ? (it.tags || []) : []); setAvail(it ? !!it.available : true);
+  if (menu.photo && menu.photo.preview) URL.revokeObjectURL(menu.photo.preview);
+  menu.photo = { path: it ? (it.photo_path || '') : '', blobs: null, removed: false, preview: '' };
+  showPhoto(photoUrl(menu.photo.path, true));
   $('itDel').hidden = !it; $('itDel').textContent = 'Διαγραφή'; $('itDel').dataset.armed = ''; $('itErr').hidden = true;
   openSheet('itemSheet'); setTimeout(function () { $(it ? 'it-price' : 'it-name-el').focus(); }, 80);
 }
@@ -505,18 +553,28 @@ $('itForm').addEventListener('submit', function (e) {
     var max = menu.items.filter(function (i) { return i.category_id === cat; }).reduce(function (m, i) { return Math.max(m, i.sort || 0); }, 0);
     row.sort = max + 10;
   }
-  var btn = $('itSave'); btn.disabled = true;
-  var q = ed ? client.from('menu_items').update(row).eq('id', ed.id) : client.from('menu_items').insert(row);
-  q.then(function (r) {
-    btn.disabled = false; if (r.error) throw r.error;
+  var btn = $('itSave'); btn.disabled = true; btn.textContent = menu.photo.blobs ? 'Ανέβασμα φωτογραφίας…' : 'Αποθήκευση…';
+  var ph = menu.photo, oldPath = ph.path, newPath = null;
+  var step = ph.blobs ? uploadPhoto(ph.blobs).then(function (p) { newPath = p; row.photo_path = p; }) : Promise.resolve();
+  if (!ph.blobs && ph.removed) row.photo_path = '';
+  step.then(function () {
+    return ed ? client.from('menu_items').update(row).eq('id', ed.id) : client.from('menu_items').insert(row);
+  }).then(function (r) {
+    if (r.error) throw r.error;
+    btn.disabled = false; btn.textContent = 'Αποθήκευση';
+    if ((newPath || ph.removed) && oldPath) removePhotoFiles(oldPath);
     closeSheets(); toast((ed ? 'Αποθηκεύτηκε: ' : 'Προστέθηκε: ') + name + ' ' + eur(price)); loadMenu();
-  }).catch(function (er) { btn.disabled = false; err.textContent = errText(er); err.hidden = false; });
+  }).catch(function (er) {
+    if (newPath) removePhotoFiles(newPath);
+    btn.disabled = false; btn.textContent = 'Αποθήκευση';
+    err.textContent = (er && /size|exceed|mime|payload/i.test(er.message || '')) ? 'Η φωτογραφία δεν ανέβηκε. Δοκιμάστε άλλη φωτογραφία.' : errText(er); err.hidden = false;
+  });
 });
 $('itDel').addEventListener('click', function () {
   var b = $('itDel'), ed = menu.editing; if (!ed) return;
   if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Σίγουρα; Πατήστε ξανά'; return; }
   client.from('menu_items').delete().eq('id', ed.id).then(function (r) {
-    if (r.error) throw r.error; closeSheets(); toast('Διαγράφηκε: ' + ed.name_el); loadMenu();
+    if (r.error) throw r.error; removePhotoFiles(ed.photo_path); closeSheets(); toast('Διαγράφηκε: ' + ed.name_el); loadMenu();
   }).catch(function (er) { $('itErr').textContent = errText(er); $('itErr').hidden = false; });
 });
 

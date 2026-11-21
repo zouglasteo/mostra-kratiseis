@@ -174,6 +174,15 @@ textarea.input{min-height:70px;resize:vertical}
 .mv-name{font-weight:600;overflow-wrap:anywhere}
 .mv-sub{display:block;font-size:.8rem;color:var(--muted);overflow-wrap:anywhere}
 .mv-price{font-family:var(--display);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.photo-box{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;align-items:center}
+.photo-box img,.photo-none{width:96px;height:96px;border-radius:12px;object-fit:cover;background:var(--bg);border:1px solid var(--line)}
+.photo-none{display:grid;place-items:center;text-align:center;font-size:.72rem;color:var(--muted);padding:6px}
+.photo-acts{display:flex;flex-wrap:wrap;gap:8px}
+.photo-acts .btn{padding:11px 14px;font-size:.92rem}
+.photo-pick{cursor:pointer;display:inline-block}
+.visually-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.mv-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--bg)}
+.mv-row.has-ph{grid-template-columns:44px minmax(0,1fr) auto auto}
 #mvSoldOnly[aria-pressed="true"]{background:var(--wall-ink);color:var(--wall)}
 .sw{position:relative;width:52px;height:30px;border-radius:999px;border:0;background:var(--ok);flex-shrink:0;padding:0}
 .sw::after{content:"";position:absolute;top:3px;left:25px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s}
@@ -268,6 +277,17 @@ textarea.input{min-height:70px;resize:vertical}
     <h3 id="itTitle">Πιάτο</h3>
     <p class="sub">Οι αλλαγές φαίνονται αμέσως στη σελίδα του μενού.</p>
     <form class="bk-form" id="itForm" novalidate>
+      <div class="field"><span>Φωτογραφία</span>
+        <div class="photo-box">
+          <img id="it-photo-img" alt="" hidden>
+          <div id="it-photo-none" class="photo-none">Χωρίς φωτογραφία</div>
+          <div class="photo-acts">
+            <label class="btn ghost photo-pick" for="it-file"><span id="it-photo-pick-lbl">Επιλογή φωτογραφίας</span></label>
+            <input type="file" id="it-file" accept="image/*" class="visually-hidden">
+            <button type="button" class="btn del" id="it-photo-rm" hidden>Αφαίρεση</button>
+          </div>
+        </div>
+      </div>
       <label class="field"><span>Κατηγορία</span><select class="input" id="it-cat"></select></label>
       <div class="two">
         <label class="field"><span>Όνομα (ελληνικά)</span><input class="input" id="it-name-el" type="text" autocomplete="off"></label>
