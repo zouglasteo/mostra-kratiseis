@@ -163,6 +163,22 @@ textarea.input{min-height:70px;resize:vertical}
 .btn.del{background:none;color:var(--bad);border:1px solid var(--bad-soft)}
 .err{color:var(--bad);font-size:.88rem;font-weight:600;margin:0}
 .menu-list{display:grid;gap:8px}
+.mv-list{display:grid;gap:18px;padding-block:14px calc(110px + env(safe-area-inset-bottom))}
+.mv-cat h2{font:600 .74rem var(--body);letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;display:flex;justify-content:space-between}
+.mv-rows{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.mv-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.mv-row:last-child{border-bottom:0}
+.mv-row.off .mv-name{text-decoration:line-through;color:var(--muted)}
+.mv-edit{all:unset;cursor:pointer;min-width:0;display:block}
+.mv-edit:focus-visible{outline:3px solid var(--warn)}
+.mv-name{font-weight:600;overflow-wrap:anywhere}
+.mv-sub{display:block;font-size:.8rem;color:var(--muted);overflow-wrap:anywhere}
+.mv-price{font-family:var(--display);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+#mvSoldOnly[aria-pressed="true"]{background:var(--wall-ink);color:var(--wall)}
+.sw{position:relative;width:52px;height:30px;border-radius:999px;border:0;background:var(--ok);flex-shrink:0;padding:0}
+.sw::after{content:"";position:absolute;top:3px;left:25px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s}
+.sw[aria-checked="false"]{background:var(--off)}
+.sw[aria-checked="false"]::after{left:3px}
 .toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:.9rem;z-index:50;max-width:calc(100% - 32px);text-align:center}
 </style>
 </head>
@@ -224,6 +240,63 @@ textarea.input{min-height:70px;resize:vertical}
 <button type="button" class="fab" id="add">+ Νέα κράτηση</button>
 </div>
 
+<!-- ============ MENU EDITOR ============ -->
+<div id="menuView" hidden>
+<header class="top">
+  <div class="wrap">
+    <div class="row1">
+      <button type="button" class="iconbtn" id="mvBack">‹ Κρατήσεις</button>
+      <div class="brand" style="cursor:default;margin-left:6px">ΜΕΝΟΥ<small>τιμές &amp; διαθεσιμότητα</small></div>
+      <a class="iconbtn" id="mvOpen" href="https://mostrameze-site.vercel.app/menu" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none">Προβολή ↗</a>
+    </div>
+    <div class="row2">
+      <input class="search" id="mq" type="search" placeholder="Αναζήτηση πιάτου" aria-label="Αναζήτηση πιάτου" autocomplete="off">
+      <button type="button" class="iconbtn" id="mvSoldOnly" aria-pressed="false">Εξαντλημένα</button>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <div id="mvNotes"></div>
+  <div id="mvList" class="mv-list" aria-live="polite"></div>
+</main>
+<button type="button" class="fab" id="mvAdd">+ Νέο πιάτο</button>
+</div>
+
+<div id="itemSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="itTitle" hidden>
+  <div class="grab"></div>
+  <div class="wrap">
+    <h3 id="itTitle">Πιάτο</h3>
+    <p class="sub">Οι αλλαγές φαίνονται αμέσως στη σελίδα του μενού.</p>
+    <form class="bk-form" id="itForm" novalidate>
+      <label class="field"><span>Κατηγορία</span><select class="input" id="it-cat"></select></label>
+      <div class="two">
+        <label class="field"><span>Όνομα (ελληνικά)</span><input class="input" id="it-name-el" type="text" autocomplete="off"></label>
+        <label class="field"><span>Όνομα (English)</span><input class="input" id="it-name-en" type="text" autocomplete="off"></label>
+      </div>
+      <div class="two">
+        <label class="field"><span>Τιμή €</span><input class="input num" id="it-price" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00"></label>
+        <div class="field"><span>Διαθέσιμο</span>
+          <div class="quick"><button type="button" id="it-avail" aria-pressed="true">Ναι, στο μενού</button></div>
+        </div>
+      </div>
+      <label class="field"><span>Περιγραφή (ελληνικά)</span><textarea class="input" id="it-desc-el" rows="2"></textarea></label>
+      <label class="field"><span>Περιγραφή (English)</span><textarea class="input" id="it-desc-en" rows="2"></textarea></label>
+      <div class="field"><span>Σημάνσεις</span><div class="quick" id="it-tags">
+        <button type="button" id="itt-vegetarian" data-tag="vegetarian" aria-pressed="false">Χορτοφαγικό</button>
+        <button type="button" id="itt-vegan" data-tag="vegan" aria-pressed="false">Vegan</button>
+        <button type="button" id="itt-spicy" data-tag="spicy" aria-pressed="false">Καυτερό</button>
+        <button type="button" id="itt-new" data-tag="new" aria-pressed="false">Νέο</button>
+      </div></div>
+      <p class="err" id="itErr" hidden></p>
+      <div class="formbar">
+        <button type="button" class="btn ghost" id="itCancel">Άκυρο</button>
+        <button type="button" class="btn del" id="itDel" hidden>Διαγραφή</button>
+        <button type="submit" class="btn main" id="itSave">Αποθήκευση</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="scrim" class="scrim" hidden></div>
 
 <div id="actSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="actTitle" hidden>
@@ -241,6 +314,7 @@ textarea.input{min-height:70px;resize:vertical}
     <h3 id="menuTitle">Mostra Κρατήσεις</h3>
     <p class="sub" id="menuSub"></p>
     <div class="menu-list">
+      <button type="button" class="act" id="m-menu">Μενού εστιατορίου<small>Τιμές, πιάτα, ό,τι τελείωσε σήμερα</small></button>
       <button type="button" class="act" id="m-export">Εξαγωγή όλων των κρατήσεων<small>Αρχείο CSV για Excel</small></button>
       <button type="button" class="act" id="m-install" hidden>Εγκατάσταση στο κινητό<small>Προσθέτει εικονίδιο στην αρχική οθόνη</small></button>
       <button type="button" class="act danger" id="m-logout">Αποσύνδεση<small>Από αυτή τη συσκευή</small></button>

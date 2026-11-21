@@ -242,7 +242,7 @@ function setStatus(b, status) {
 var lastFocus = null;
 function openSheet(id) { lastFocus = document.activeElement; $('scrim').hidden = false; $(id).hidden = false; }
 function closeSheets() {
-  $('scrim').hidden = true; ['actSheet', 'formSheet', 'menuSheet'].forEach(function (id) { $(id).hidden = true; });
+  $('scrim').hidden = true; ['actSheet', 'formSheet', 'menuSheet', 'itemSheet'].forEach(function (id) { $(id).hidden = true; });
   current = null; if (lastFocus && lastFocus.focus) try { lastFocus.focus({ preventScroll: true }); } catch (e) {}
 }
 $('scrim').addEventListener('click', closeSheets);
@@ -416,10 +416,114 @@ window.addEventListener('offline', function () { state.online = false; render();
 var lastToday = iso(new Date());
 setInterval(function () { var t = iso(new Date()); if (t !== lastToday) { if (state.date === lastToday) goTo(t); lastToday = t; } else render(); }, 60000);
 
+/* ================================================================
+   MENU EDITOR – prices, availability, dishes (public site reads the same tables)
+   ================================================================ */
+var menu = { cats: [], items: [], q: '', soldOnly: false, editing: null, tags: [], avail: true, loaded: false };
+function eur(n) { return '€' + Number(n).toFixed(2).replace('.', ','); }
+function parsePrice(v) { v = String(v || '').replace('€', '').replace(/\s/g, '').replace(',', '.'); var n = Number(v); return v !== '' && isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null; }
+function mvNote(html) { $('mvNotes').innerHTML = html ? '<div class="note-bar ' + (html.indexOf('!') === 0 ? 'bad' : 'info') + '">' + html.replace(/^!/, '') + '</div>' : ''; }
+function loadMenu() {
+  if (!client) { mvNote('!Το μενού επεξεργάζεται μόνο όταν η εφαρμογή είναι συνδεδεμένη με τη βάση δεδομένων.'); renderMenu(); return; }
+  mvNote(menu.loaded ? '' : 'Φόρτωση μενού…');
+  Promise.all([
+    client.from('menu_categories').select('*').order('sort'),
+    client.from('menu_items').select('*').order('sort')
+  ]).then(function (r) {
+    if (r[0].error || r[1].error) throw (r[0].error || r[1].error);
+    menu.cats = r[0].data; menu.items = r[1].data; menu.loaded = true; mvNote(''); renderMenu();
+  }).catch(function (e) { mvNote('!' + esc(errText(e))); });
+}
+function renderMenu() {
+  var nq = menu.q.trim().toLowerCase(), h = '';
+  menu.cats.forEach(function (c) {
+    var rows = menu.items.filter(function (i) {
+      return i.category_id === c.id && (!menu.soldOnly || !i.available) &&
+        (!nq || (i.name_el + ' ' + i.name_en).toLowerCase().indexOf(nq) >= 0);
+    });
+    if (!rows.length) return;
+    var off = rows.filter(function (i) { return !i.available; }).length;
+    h += '<section class="mv-cat"><h2><span>' + esc(c.name_el) + '</span><span>' + rows.length + (off ? ' · ' + off + ' εκτός' : '') + '</span></h2><div class="mv-rows">' +
+      rows.map(function (i) {
+        return '<div class="mv-row' + (i.available ? '' : ' off') + '">' +
+          '<button type="button" class="mv-edit" data-id="' + esc(i.id) + '"><span class="mv-name">' + esc(i.name_el) + '</span><span class="mv-sub">' + esc(i.name_en) + (i.available ? '' : ' · δεν εμφανίζεται') + '</span></button>' +
+          '<span class="mv-price">' + eur(i.price) + '</span>' +
+          '<button type="button" class="sw" role="switch" aria-checked="' + (!!i.available) + '" aria-label="Διαθέσιμο: ' + esc(i.name_el) + '" data-sw="' + esc(i.id) + '"></button></div>';
+      }).join('') + '</div></section>';
+  });
+  if (!h) h = menu.loaded ? '<div class="empty"><b>' + (menu.soldOnly ? 'Όλα είναι διαθέσιμα' : 'Δεν βρέθηκε πιάτο') + '</b>' + (menu.soldOnly ? 'Κανένα πιάτο δεν είναι σημειωμένο ως εξαντλημένο.' : 'Δοκιμάστε άλλη λέξη.') + '</div>' : '';
+  $('mvList').innerHTML = h;
+  $('mvSoldOnly').setAttribute('aria-pressed', menu.soldOnly);
+}
+function showMenuView() { closeSheets(); $('appView').hidden = true; $('menuView').hidden = false; window.scrollTo(0, 0); loadMenu(); }
+function hideMenuView() { $('menuView').hidden = true; $('appView').hidden = false; }
+$('m-menu').addEventListener('click', showMenuView);
+$('mvBack').addEventListener('click', hideMenuView);
+$('mq').addEventListener('input', function () { menu.q = this.value; renderMenu(); });
+$('mvSoldOnly').addEventListener('click', function () { menu.soldOnly = !menu.soldOnly; renderMenu(); });
+$('mvList').addEventListener('click', function (e) {
+  var sw = e.target.closest('[data-sw]');
+  if (sw) {
+    var it = menu.items.find(function (i) { return i.id === sw.dataset.sw; }); if (!it) return;
+    var next = !it.available; it.available = next; renderMenu();
+    client.from('menu_items').update({ available: next }).eq('id', it.id).then(function (r) {
+      if (r.error) throw r.error; toast(it.name_el + (next ? ': ξανά στο μενού' : ': εξαντλήθηκε'));
+    }).catch(function (er) { it.available = !next; renderMenu(); toast(errText(er)); });
+    return;
+  }
+  var ed = e.target.closest('.mv-edit');
+  if (ed) openItem(menu.items.find(function (i) { return i.id === ed.dataset.id; }));
+});
+function setItTags(t) { menu.tags = t.slice(); document.querySelectorAll('#it-tags button').forEach(function (b) { b.setAttribute('aria-pressed', menu.tags.indexOf(b.dataset.tag) >= 0); }); }
+function setAvail(v) { menu.avail = v; $('it-avail').setAttribute('aria-pressed', v); $('it-avail').textContent = v ? 'Ναι, στο μενού' : 'Όχι, κρυμμένο'; }
+$('it-tags').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; var t = b.dataset.tag, i = menu.tags.indexOf(t); if (i >= 0) menu.tags.splice(i, 1); else menu.tags.push(t); setItTags(menu.tags); });
+$('it-avail').addEventListener('click', function () { setAvail(!menu.avail); });
+function openItem(it) {
+  if (!client) return;
+  menu.editing = it || null;
+  $('it-cat').innerHTML = menu.cats.map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(c.name_el) + '</option>'; }).join('');
+  $('itTitle').textContent = it ? 'Επεξεργασία πιάτου' : 'Νέο πιάτο';
+  $('it-cat').value = it ? it.category_id : (menu.cats[0] && menu.cats[0].id);
+  $('it-name-el').value = it ? it.name_el : ''; $('it-name-en').value = it ? it.name_en : '';
+  $('it-price').value = it ? Number(it.price).toFixed(2).replace('.', ',') : '';
+  $('it-desc-el').value = it ? it.desc_el : ''; $('it-desc-en').value = it ? it.desc_en : '';
+  setItTags(it ? (it.tags || []) : []); setAvail(it ? !!it.available : true);
+  $('itDel').hidden = !it; $('itDel').textContent = 'Διαγραφή'; $('itDel').dataset.armed = ''; $('itErr').hidden = true;
+  openSheet('itemSheet'); setTimeout(function () { $(it ? 'it-price' : 'it-name-el').focus(); }, 80);
+}
+$('mvAdd').addEventListener('click', function () { openItem(null); });
+$('itCancel').addEventListener('click', closeSheets);
+$('itForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  var err = $('itErr'); err.hidden = true;
+  var name = $('it-name-el').value.trim(), price = parsePrice($('it-price').value), cat = $('it-cat').value;
+  if (!name) { err.textContent = 'Γράψτε το όνομα στα ελληνικά.'; err.hidden = false; $('it-name-el').focus(); return; }
+  if (price === null) { err.textContent = 'Η τιμή πρέπει να είναι αριθμός, π.χ. 7,50.'; err.hidden = false; $('it-price').focus(); return; }
+  var row = { category_id: cat, name_el: name, name_en: $('it-name-en').value.trim(), desc_el: $('it-desc-el').value.trim(), desc_en: $('it-desc-en').value.trim(), price: price, tags: menu.tags.slice(), available: menu.avail };
+  var ed = menu.editing;
+  if (!ed || ed.category_id !== cat) {
+    var max = menu.items.filter(function (i) { return i.category_id === cat; }).reduce(function (m, i) { return Math.max(m, i.sort || 0); }, 0);
+    row.sort = max + 10;
+  }
+  var btn = $('itSave'); btn.disabled = true;
+  var q = ed ? client.from('menu_items').update(row).eq('id', ed.id) : client.from('menu_items').insert(row);
+  q.then(function (r) {
+    btn.disabled = false; if (r.error) throw r.error;
+    closeSheets(); toast((ed ? 'Αποθηκεύτηκε: ' : 'Προστέθηκε: ') + name + ' ' + eur(price)); loadMenu();
+  }).catch(function (er) { btn.disabled = false; err.textContent = errText(er); err.hidden = false; });
+});
+$('itDel').addEventListener('click', function () {
+  var b = $('itDel'), ed = menu.editing; if (!ed) return;
+  if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Σίγουρα; Πατήστε ξανά'; return; }
+  client.from('menu_items').delete().eq('id', ed.id).then(function (r) {
+    if (r.error) throw r.error; closeSheets(); toast('Διαγράφηκε: ' + ed.name_el); loadMenu();
+  }).catch(function (er) { $('itErr').textContent = errText(er); $('itErr').hidden = false; });
+});
+
 /* ---------------- login + boot ---------------- */
-function showApp() { $('loginView').hidden = true; $('appView').hidden = false; subscribe(); }
+function showApp() { $('loginView').hidden = true; $('menuView').hidden = true; $('appView').hidden = false; subscribe(); }
 function showLogin(msg) {
-  $('appView').hidden = true; $('loginView').hidden = false;
+  $('appView').hidden = true; $('menuView').hidden = true; $('loginView').hidden = false;
   if (!C.STAFF_EMAIL) $('emailRow').hidden = false;
   $('l-email').value = C.STAFF_EMAIL || '';
   if (msg) { $('lErr').textContent = msg; $('lErr').hidden = false; }
