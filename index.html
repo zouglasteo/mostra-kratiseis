@@ -183,7 +183,10 @@ textarea.input{min-height:70px;resize:vertical}
 .visually-hidden{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .mv-thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--bg)}
 .mv-row.has-ph{grid-template-columns:44px minmax(0,1fr) auto auto}
-#mvSoldOnly[aria-pressed="true"]{background:var(--wall-ink);color:var(--wall)}
+.al-status{margin:0;font-size:.85rem;color:var(--muted)}
+.al-status.warn{color:var(--bad);font-weight:600}
+#it-al button[aria-pressed="true"]{background:var(--bad);border-color:transparent;color:#fff}
+#mvNoAl[aria-pressed="true"],#mvSoldOnly[aria-pressed="true"]{background:var(--wall-ink);color:var(--wall)}
 .sw{position:relative;width:52px;height:30px;border-radius:999px;border:0;background:var(--ok);flex-shrink:0;padding:0}
 .sw::after{content:"";position:absolute;top:3px;left:25px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s}
 .sw[aria-checked="false"]{background:var(--off)}
@@ -261,6 +264,7 @@ textarea.input{min-height:70px;resize:vertical}
     <div class="row2">
       <input class="search" id="mq" type="search" placeholder="Αναζήτηση πιάτου" aria-label="Αναζήτηση πιάτου" autocomplete="off">
       <button type="button" class="iconbtn" id="mvSoldOnly" aria-pressed="false">Εξαντλημένα</button>
+      <button type="button" class="iconbtn" id="mvNoAl" aria-pressed="false">Χωρίς αλλεργ.</button>
     </div>
   </div>
 </header>
@@ -307,6 +311,11 @@ textarea.input{min-height:70px;resize:vertical}
         <button type="button" id="itt-spicy" data-tag="spicy" aria-pressed="false">Καυτερό</button>
         <button type="button" id="itt-new" data-tag="new" aria-pressed="false">Νέο</button>
       </div></div>
+      <div class="field"><span>Αλλεργιογόνα</span>
+        <p class="al-status" id="al-status"></p>
+        <div class="quick" id="it-al"></div>
+        <div class="quick" style="margin-top:4px"><button type="button" id="al-none" aria-pressed="false">Δεν περιέχει κανένα</button></div>
+      </div>
       <p class="err" id="itErr" hidden></p>
       <div class="formbar">
         <button type="button" class="btn ghost" id="itCancel">Άκυρο</button>

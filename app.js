@@ -419,8 +419,26 @@ setInterval(function () { var t = iso(new Date()); if (t !== lastToday) { if (st
 /* ================================================================
    MENU EDITOR – prices, availability, dishes (public site reads the same tables)
    ================================================================ */
-var menu = { cats: [], items: [], q: '', soldOnly: false, editing: null, tags: [], avail: true, loaded: false, photo: null };
+var menu = { cats: [], items: [], q: '', soldOnly: false, noAl: false, al: null, editing: null, tags: [], avail: true, loaded: false, photo: null };
 var BUCKET = 'menu-photos';
+var ALLERGENS = [['gluten','Γλουτένη'],['milk','Γάλα / λακτόζη'],['eggs','Αυγά'],['fish','Ψάρι'],['crustaceans','Οστρακοειδή'],['molluscs','Μαλάκια'],['nuts','Ξηροί καρποί'],['peanuts','Αράπικα φιστίκια'],['sesame','Σουσάμι'],['soy','Σόγια'],['celery','Σέλινο'],['mustard','Μουστάρδα'],['sulphites','Θειώδη'],['lupin','Λούπινο']];
+$('it-al').innerHTML = ALLERGENS.map(function (a) { return '<button type="button" id="al-' + a[0] + '" data-al="' + a[0] + '" aria-pressed="false">' + a[1] + '</button>'; }).join('');
+function setAl(list) {
+  menu.al = list === null ? null : list.slice();
+  document.querySelectorAll('#it-al button').forEach(function (b) { b.setAttribute('aria-pressed', !!menu.al && menu.al.indexOf(b.dataset.al) >= 0); });
+  $('al-none').setAttribute('aria-pressed', !!menu.al && menu.al.length === 0);
+  var st = $('al-status');
+  if (menu.al === null) { st.textContent = 'Δεν έχουν συμπληρωθεί. Επιλέξτε ό,τι περιέχει το πιάτο, ή «Δεν περιέχει κανένα».'; st.className = 'al-status warn'; }
+  else if (!menu.al.length) { st.textContent = 'Ελέγχθηκε: δεν περιέχει κανένα από τα 14 αλλεργιογόνα.'; st.className = 'al-status'; }
+  else { st.textContent = 'Περιέχει ' + menu.al.length + (menu.al.length === 1 ? ' αλλεργιογόνο.' : ' αλλεργιογόνα.'); st.className = 'al-status'; }
+}
+$('it-al').addEventListener('click', function (e) {
+  var b = e.target.closest('button'); if (!b) return;
+  var l = menu.al ? menu.al.slice() : [], i = l.indexOf(b.dataset.al);
+  if (i >= 0) l.splice(i, 1); else l.push(b.dataset.al);
+  setAl(l.length ? l : null);
+});
+$('al-none').addEventListener('click', function () { setAl(menu.al && menu.al.length === 0 ? null : []); });
 function photoUrl(path, thumb) { return path ? C.SUPABASE_URL + '/storage/v1/object/public/' + BUCKET + '/' + path + (thumb ? '-t' : '') + '.jpg' : ''; }
 /* shrink a picked photo on the phone before upload: full 1200px + square 320px thumbnail */
 function loadBitmap(file) {
@@ -483,7 +501,7 @@ function renderMenu() {
   var nq = menu.q.trim().toLowerCase(), h = '';
   menu.cats.forEach(function (c) {
     var rows = menu.items.filter(function (i) {
-      return i.category_id === c.id && (!menu.soldOnly || !i.available) &&
+      return i.category_id === c.id && (!menu.soldOnly || !i.available) && (!menu.noAl || i.allergens == null) &&
         (!nq || (i.name_el + ' ' + i.name_en).toLowerCase().indexOf(nq) >= 0);
     });
     if (!rows.length) return;
@@ -491,14 +509,17 @@ function renderMenu() {
     h += '<section class="mv-cat"><h2><span>' + esc(c.name_el) + '</span><span>' + rows.length + (off ? ' · ' + off + ' εκτός' : '') + '</span></h2><div class="mv-rows">' +
       rows.map(function (i) {
         return '<div class="mv-row' + (i.available ? '' : ' off') + (i.photo_path ? ' has-ph' : '') + '">' + (i.photo_path ? '<img class="mv-thumb" loading="lazy" alt="" src="' + esc(photoUrl(i.photo_path, true)) + '">' : '') +
-          '<button type="button" class="mv-edit" data-id="' + esc(i.id) + '"><span class="mv-name">' + esc(i.name_el) + '</span><span class="mv-sub">' + esc(i.name_en) + (i.available ? '' : ' · δεν εμφανίζεται') + '</span></button>' +
+          '<button type="button" class="mv-edit" data-id="' + esc(i.id) + '"><span class="mv-name">' + esc(i.name_el) + '</span><span class="mv-sub">' + esc(i.name_en) + (i.available ? '' : ' · δεν εμφανίζεται') + (i.allergens == null ? ' · <b style="color:var(--bad)">λείπουν αλλεργιογόνα</b>' : '') + '</span></button>' +
           '<span class="mv-price">' + eur(i.price) + '</span>' +
           '<button type="button" class="sw" role="switch" aria-checked="' + (!!i.available) + '" aria-label="Διαθέσιμο: ' + esc(i.name_el) + '" data-sw="' + esc(i.id) + '"></button></div>';
       }).join('') + '</div></section>';
   });
-  if (!h) h = menu.loaded ? '<div class="empty"><b>' + (menu.soldOnly ? 'Όλα είναι διαθέσιμα' : 'Δεν βρέθηκε πιάτο') + '</b>' + (menu.soldOnly ? 'Κανένα πιάτο δεν είναι σημειωμένο ως εξαντλημένο.' : 'Δοκιμάστε άλλη λέξη.') + '</div>' : '';
+  if (!h) h = menu.loaded ? '<div class="empty"><b>' + (menu.noAl ? 'Όλα τα πιάτα έχουν αλλεργιογόνα' : menu.soldOnly ? 'Όλα είναι διαθέσιμα' : 'Δεν βρέθηκε πιάτο') + '</b>' + (menu.noAl ? 'Κάθε πιάτο έχει συμπληρωμένα αλλεργιογόνα.' : menu.soldOnly ? 'Κανένα πιάτο δεν είναι σημειωμένο ως εξαντλημένο.' : 'Δοκιμάστε άλλη λέξη.') + '</div>' : '';
   $('mvList').innerHTML = h;
   $('mvSoldOnly').setAttribute('aria-pressed', menu.soldOnly);
+  $('mvNoAl').setAttribute('aria-pressed', menu.noAl);
+  var missing = menu.items.filter(function (i) { return i.allergens == null; }).length;
+  if (menu.loaded) mvNote(missing ? missing + (missing === 1 ? ' πιάτο δεν έχει' : ' πιάτα δεν έχουν') + ' ακόμα αλλεργιογόνα. Πατήστε «Χωρίς αλλεργ.» για να τα δείτε.' : '');
 }
 function showMenuView() { closeSheets(); $('appView').hidden = true; $('menuView').hidden = false; window.scrollTo(0, 0); loadMenu(); }
 function hideMenuView() { $('menuView').hidden = true; $('appView').hidden = false; }
@@ -506,6 +527,7 @@ $('m-menu').addEventListener('click', showMenuView);
 $('mvBack').addEventListener('click', hideMenuView);
 $('mq').addEventListener('input', function () { menu.q = this.value; renderMenu(); });
 $('mvSoldOnly').addEventListener('click', function () { menu.soldOnly = !menu.soldOnly; renderMenu(); });
+$('mvNoAl').addEventListener('click', function () { menu.noAl = !menu.noAl; renderMenu(); });
 $('mvList').addEventListener('click', function (e) {
   var sw = e.target.closest('[data-sw]');
   if (sw) {
@@ -532,7 +554,7 @@ function openItem(it) {
   $('it-name-el').value = it ? it.name_el : ''; $('it-name-en').value = it ? it.name_en : '';
   $('it-price').value = it ? Number(it.price).toFixed(2).replace('.', ',') : '';
   $('it-desc-el').value = it ? it.desc_el : ''; $('it-desc-en').value = it ? it.desc_en : '';
-  setItTags(it ? (it.tags || []) : []); setAvail(it ? !!it.available : true);
+  setItTags(it ? (it.tags || []) : []); setAvail(it ? !!it.available : true); setAl(it && Array.isArray(it.allergens) ? it.allergens : null);
   if (menu.photo && menu.photo.preview) URL.revokeObjectURL(menu.photo.preview);
   menu.photo = { path: it ? (it.photo_path || '') : '', blobs: null, removed: false, preview: '' };
   showPhoto(photoUrl(menu.photo.path, true));
@@ -547,7 +569,7 @@ $('itForm').addEventListener('submit', function (e) {
   var name = $('it-name-el').value.trim(), price = parsePrice($('it-price').value), cat = $('it-cat').value;
   if (!name) { err.textContent = 'Γράψτε το όνομα στα ελληνικά.'; err.hidden = false; $('it-name-el').focus(); return; }
   if (price === null) { err.textContent = 'Η τιμή πρέπει να είναι αριθμός, π.χ. 7,50.'; err.hidden = false; $('it-price').focus(); return; }
-  var row = { category_id: cat, name_el: name, name_en: $('it-name-en').value.trim(), desc_el: $('it-desc-el').value.trim(), desc_en: $('it-desc-en').value.trim(), price: price, tags: menu.tags.slice(), available: menu.avail };
+  var row = { category_id: cat, name_el: name, name_en: $('it-name-en').value.trim(), desc_el: $('it-desc-el').value.trim(), desc_en: $('it-desc-en').value.trim(), price: price, tags: menu.tags.slice(), available: menu.avail, allergens: menu.al === null ? null : menu.al.slice() };
   var ed = menu.editing;
   if (!ed || ed.category_id !== cat) {
     var max = menu.items.filter(function (i) { return i.category_id === cat; }).reduce(function (m, i) { return Math.max(m, i.sort || 0); }, 0);
