@@ -45,13 +45,18 @@ function uid() { return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.
 function fromDb(r) {
   return { id: r.id, date: r.date, time: r.time, name: r.name, phone: r.phone || '', phoneKey: r.phone_key || '',
     people: r.people, table: r.table_no || '', notes: r.notes || '', tags: r.tags || [], status: r.status,
-    walkin: !!r.walkin, createdAt: r.created_at, updatedAt: r.updated_at };
+    walkin: !!r.walkin, createdAt: r.created_at, updatedAt: r.updated_at,
+    source: r.source || 'staff', email: r.email || '', ref: r.ref || '' };
 }
 function toDb(b) {
   return { date: b.date, time: b.time, name: b.name, phone: b.phone, phone_key: b.phoneKey, people: b.people,
     table_no: b.table, notes: b.notes, tags: b.tags, status: b.status, walkin: b.walkin };
 }
 
+function onlineAlert(b) {
+  toast('Νέα online κράτηση: ' + b.name + ', ' + b.people + ' άτ., ' + fmtDate(b.date) + ' ' + b.time);
+  try { if (navigator.vibrate) navigator.vibrate([120, 60, 120]); } catch (e) {}
+}
 function SupabaseStore(client) {
   var T = 'bookings';
   function check(res) { if (res.error) throw res.error; return res.data; }
@@ -68,6 +73,7 @@ function SupabaseStore(client) {
       load();
       var ch = client.channel('bookings-' + date + '-' + Date.now())
         .on('postgres_changes', { event: '*', schema: 'public', table: T }, function (p) {
+          if (p.eventType === 'INSERT' && p.new && p.new.source === 'online') onlineAlert(fromDb(p.new));
           var d1 = p.new && p.new.date, d0 = p.old && p.old.date;
           if (d1 === date || d0 === date || (!d1 && !d0)) { clearTimeout(timer); timer = setTimeout(load, 150); }
         })
@@ -206,7 +212,7 @@ function render() {
       '<span class="t num">' + esc(b.time) + '</span>' +
       '<span class="who"><span class="name">' + esc(b.name || 'Χωρίς όνομα') + '</span>' +
       '<span class="meta"><span class="chip ' + esc(b.status) + '">' + st.i + ' ' + st.l + '</span>' +
-      (b.table ? '<span>Τραπ. ' + esc(b.table) + '</span>' : '') + (b.walkin ? '<span>Walk-in</span>' : '') + tags + '</span>' +
+      (b.table ? '<span>Τραπ. ' + esc(b.table) + '</span>' : '') + (b.walkin ? '<span>Walk-in</span>' : '') + (b.source === 'online' ? '<span class="tag online">Online</span>' : '') + tags + '</span>' +
       (b.notes ? '<span class="note">' + esc(b.notes) + '</span>' : '') + '</span>' +
       '<span class="ppl num">' + esc(b.people) + '<small>άτομα</small></span></button>';
   }).join('');
@@ -251,7 +257,7 @@ document.addEventListener('keydown', function (e) { if (e.key === 'Escape') clos
 function openActions(b) {
   current = b;
   $('actTitle').textContent = b.time + ' · ' + (b.name || 'Χωρίς όνομα');
-  $('actSub').textContent = b.people + ' άτομα' + (b.table ? ' · τραπέζι ' + b.table : '') + (b.phone ? ' · ' + b.phone : '');
+  $('actSub').textContent = b.people + ' άτομα' + (b.table ? ' · τραπέζι ' + b.table : '') + (b.phone ? ' · ' + b.phone : '') + (b.source === 'online' ? ' · online, κωδικός ' + b.ref + (b.email ? ' · ' + b.email : '') : '');
   function btn(id, cls, label, sub) { return '<button type="button" class="act ' + cls + '" id="' + id + '">' + label + (sub ? '<small>' + sub + '</small>' : '') + '</button>'; }
   var h = '';
   if (b.status !== 'seated' && b.status !== 'left') h += btn('a-seat', 'go wide', 'Ήρθε · στο τραπέζι', 'Σημειώνει την άφιξη');
@@ -397,8 +403,8 @@ window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault()
 $('m-export').addEventListener('click', function () {
   var b = $('m-export'); b.disabled = true;
   store.all().then(function (rows) {
-    var cols = ['date', 'time', 'name', 'phone', 'people', 'table', 'status', 'walkin', 'tags', 'notes'];
-    var head = ['Ημερομηνία', 'Ώρα', 'Όνομα', 'Τηλέφωνο', 'Άτομα', 'Τραπέζι', 'Κατάσταση', 'Walk-in', 'Ετικέτες', 'Σχόλια'];
+    var cols = ['date', 'time', 'name', 'phone', 'email', 'people', 'table', 'status', 'source', 'walkin', 'tags', 'notes'];
+    var head = ['Ημερομηνία', 'Ώρα', 'Όνομα', 'Τηλέφωνο', 'Email', 'Άτομα', 'Τραπέζι', 'Κατάσταση', 'Πηγή', 'Walk-in', 'Ετικέτες', 'Σχόλια'];
     var q = function (v) { v = Array.isArray(v) ? v.join(', ') : (v === true ? 'ναι' : v === false ? '' : (v == null ? '' : String(v))); return '"' + v.replace(/"/g, '""') + '"'; };
     var lines = [head.map(q).join(';')].concat(rows.map(function (r) {
       return cols.map(function (c) { return q(c === 'status' ? (STATUS[r.status] || {}).l || r.status : r[c]); }).join(';');
