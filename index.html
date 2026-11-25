@@ -187,6 +187,24 @@ textarea.input{min-height:70px;resize:vertical}
 .al-status{margin:0;font-size:.85rem;color:var(--muted)}
 .al-status.warn{color:var(--bad);font-weight:600}
 #it-al button[aria-pressed="true"]{background:var(--bad);border-color:transparent;color:#fff}
+.cv-list{display:grid;gap:8px;padding-block:14px 40px}
+.cv-row{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;width:100%}
+.cv-row:focus-visible{outline:3px solid var(--warn)}
+.cv-name{font-weight:600;overflow-wrap:anywhere}
+.cv-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.82rem;color:var(--muted);margin-top:2px;align-items:center}
+.cv-visits{text-align:right;font-family:var(--display);font-weight:700;font-size:1.4rem;line-height:1}
+.cv-visits small{display:block;font:600 .6rem var(--body);letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-top:2px}
+.cs-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.cs-stats div{background:var(--bg);border-radius:12px;padding:10px;text-align:center}
+.cs-stats b{display:block;font-family:var(--display);font-size:1.4rem;line-height:1.1}
+.cs-stats span{font-size:.72rem;color:var(--muted)}
+.cs-stats .bad b{color:var(--bad)}
+.cs-dates{font-size:.86rem;color:var(--muted);margin:0 0 14px}
+.cs-h{font:600 .72rem var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
+.cs-hist{display:grid;gap:6px}
+.cs-hist div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font-size:.88rem}
+.cs-hist small{color:var(--muted);overflow-wrap:anywhere}
+.hint-sm{font-size:.78rem;color:var(--muted);margin:6px 0 0}
 #mvNoAl[aria-pressed="true"],#mvSoldOnly[aria-pressed="true"]{background:var(--wall-ink);color:var(--wall)}
 .sw{position:relative;width:52px;height:30px;border-radius:999px;border:0;background:var(--ok);flex-shrink:0;padding:0}
 .sw::after{content:"";position:absolute;top:3px;left:25px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s}
@@ -276,6 +294,55 @@ textarea.input{min-height:70px;resize:vertical}
 <button type="button" class="fab" id="mvAdd">+ Νέο πιάτο</button>
 </div>
 
+<!-- ============ CUSTOMERS ============ -->
+<div id="custView" hidden>
+<header class="top">
+  <div class="wrap">
+    <div class="row1">
+      <button type="button" class="iconbtn" id="cvBack">‹ Κρατήσεις</button>
+      <div class="brand" style="cursor:default;margin-left:6px">ΠΕΛΑΤΕΣ<small id="cvCount">&nbsp;</small></div>
+    </div>
+    <div class="row2">
+      <input class="search" id="cq" type="search" placeholder="Όνομα ή τηλέφωνο" aria-label="Αναζήτηση πελάτη" autocomplete="off">
+      <div class="seg" role="group" aria-label="Φίλτρο πελατών">
+        <button type="button" data-cf="all" aria-pressed="true">Όλοι</button>
+        <button type="button" data-cf="regular" aria-pressed="false">Τακτικοί</button>
+        <button type="button" data-cf="noshow" aria-pressed="false">Δεν ήρθαν</button>
+      </div>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  <div id="cvNotes"></div>
+  <div id="cvList" class="cv-list" aria-live="polite"></div>
+</main>
+</div>
+
+<div id="custSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="csName" hidden>
+  <div class="grab"></div>
+  <div class="wrap">
+    <h3 id="csName"></h3>
+    <p class="sub" id="csSub"></p>
+    <div class="cs-stats" id="csStats"></div>
+    <p class="cs-dates" id="csDates"></p>
+    <div class="actions" style="margin-bottom:16px">
+      <a class="act" id="csCall" href="#">Κλήση<small id="csCallNum"></small></a>
+      <button type="button" class="act" id="csBook">Νέα κράτηση<small>Με τα στοιχεία του</small></button>
+    </div>
+    <div class="field" style="margin-bottom:10px"><span>Ετικέτες</span><div class="quick" id="cs-tags"></div></div>
+    <label class="field"><span>Σημειώσεις για τον πελάτη</span><textarea class="input" id="cs-notes" maxlength="1000" placeholder="π.χ. αλλεργία στους ξηρούς καρπούς, προτιμά το τραπέζι 4"></textarea></label>
+    <div class="formbar" style="position:static;margin:10px 0 0;padding:0">
+      <button type="button" class="btn ghost" id="csClose">Κλείσιμο</button>
+      <button type="button" class="btn main" id="csSave">Αποθήκευση σημειώσεων</button>
+    </div>
+    <p class="err" id="csErr" hidden></p>
+    <h4 class="cs-h">Ιστορικό κρατήσεων</h4>
+    <div id="csHist" class="cs-hist"></div>
+    <button type="button" class="btn del" id="csDel" style="margin-top:18px;width:100%">Διαγραφή πελάτη και ιστορικού</button>
+    <p class="hint-sm">Για αιτήματα διαγραφής (GDPR). Σβήνει όλες τις κρατήσεις και τις σημειώσεις του πελάτη.</p>
+  </div>
+</div>
+
 <div id="itemSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="itTitle" hidden>
   <div class="grab"></div>
   <div class="wrap">
@@ -344,6 +411,7 @@ textarea.input{min-height:70px;resize:vertical}
     <h3 id="menuTitle">Mostra Κρατήσεις</h3>
     <p class="sub" id="menuSub"></p>
     <div class="menu-list">
+      <button type="button" class="act" id="m-cust">Πελάτες<small>Επισκέψεις, ιστορικό, σημειώσεις</small></button>
       <button type="button" class="act" id="m-menu">Μενού εστιατορίου<small>Τιμές, πιάτα, ό,τι τελείωσε σήμερα</small></button>
       <button type="button" class="act" id="m-export">Εξαγωγή όλων των κρατήσεων<small>Αρχείο CSV για Excel</small></button>
       <button type="button" class="act" id="m-install" hidden>Εγκατάσταση στο κινητό<small>Προσθέτει εικονίδιο στην αρχική οθόνη</small></button>

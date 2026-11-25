@@ -248,7 +248,7 @@ function setStatus(b, status) {
 var lastFocus = null;
 function openSheet(id) { lastFocus = document.activeElement; $('scrim').hidden = false; $(id).hidden = false; }
 function closeSheets() {
-  $('scrim').hidden = true; ['actSheet', 'formSheet', 'menuSheet', 'itemSheet'].forEach(function (id) { $(id).hidden = true; });
+  $('scrim').hidden = true; ['actSheet', 'formSheet', 'menuSheet', 'itemSheet', 'custSheet'].forEach(function (id) { $(id).hidden = true; });
   current = null; if (lastFocus && lastFocus.focus) try { lastFocus.focus({ preventScroll: true }); } catch (e) {}
 }
 $('scrim').addEventListener('click', closeSheets);
@@ -318,18 +318,22 @@ function lookup() {
   var k = phoneKey($('f-phone').value), box = $('history');
   if (k.length < 8) { box.hidden = true; return; }
   var seq = ++lkSeq;
-  store.byPhone(k).then(function (rows) {
+  var cust = client ? client.from('customers').select('notes,tags').eq('phone_key', k).maybeSingle().then(function (r) { return r.data; }, function () { return null; }) : Promise.resolve(null);
+  Promise.all([store.byPhone(k), cust]).then(function (res) {
+    var rows = res[0], cu = res[1];
     if (seq !== lkSeq) return;
     rows = rows.filter(function (o) { return !editing || o.id !== editing.id; });
     box.hidden = false;
     if (!rows.length) { box.className = 'history'; box.textContent = 'Νέος πελάτης. Δεν υπάρχει άλλη κράτηση με αυτό το τηλέφωνο.'; return; }
-    var came = rows.filter(function (r) { return r.status === 'seated' || r.status === 'left'; }).length;
+    var today = iso(new Date());
+    var came = rows.filter(function (r) { return r.status === 'seated' || r.status === 'left' || (r.status === 'confirmed' && r.date < today); }).length;
     var ns = rows.filter(function (r) { return r.status === 'noshow'; }).length;
     var last = rows[0], note = rows.find(function (r) { return r.notes; });
     var nm = $('f-name').value.trim(); if (!nm || nm === 'Walk-in') $('f-name').value = last.name || '';
     box.className = 'history' + (ns ? ' warn' : '');
     box.innerHTML = '<b>' + esc(last.name || 'Πελάτης') + '</b> · ' + rows.length + (rows.length === 1 ? ' κράτηση' : ' κρατήσεις') + ', ήρθε ' + came + (ns ? ', <b>δεν ήρθε ' + ns + '</b>' : '') +
-      '<br>Τελευταία: ' + esc(fmtDate(last.date)) + ' ' + esc(last.time) + ' · ' + esc(last.people) + ' άτομα' + (note ? '<br>Σημείωση: ' + esc(note.notes) : '');
+      '<br>Τελευταία: ' + esc(fmtDate(last.date)) + ' ' + esc(last.time) + ' · ' + esc(last.people) + ' άτομα' + (note ? '<br>Σημείωση κράτησης: ' + esc(note.notes) : '') +
+      (cu && cu.tags && cu.tags.length ? '<br><b>' + cu.tags.map(esc).join(' · ') + '</b>' : '') + (cu && cu.notes ? '<br>Για τον πελάτη: <b>' + esc(cu.notes) + '</b>' : '');
   }).catch(function () { if (seq === lkSeq) box.hidden = true; });
 }
 
@@ -606,10 +610,111 @@ $('itDel').addEventListener('click', function () {
   }).catch(function (er) { $('itErr').textContent = errText(er); $('itErr').hidden = false; });
 });
 
+/* ================================================================
+   CUSTOMERS – built from the bookings (grouped by phone), plus staff notes
+   ================================================================ */
+var cv = { rows: [], q: '', f: 'all', loaded: false, cur: null, tags: [] };
+var CUST_TAGS = ['VIP', 'Φίλος του μαγαζιού', 'Αλλεργία', 'Προτιμά έξω', 'Προτιμά μέσα', 'Με παιδιά'];
+$('cs-tags').innerHTML = CUST_TAGS.map(function (t, i) { return '<button type="button" id="ct-' + i + '" data-t="' + esc(t) + '" aria-pressed="false">' + esc(t) + '</button>'; }).join('');
+function cvNote(h, bad) { $('cvNotes').innerHTML = h ? '<div class="note-bar ' + (bad ? 'bad' : 'info') + '">' + h + '</div>' : ''; }
+function normTxt(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+function loadCustomers() {
+  if (!client) { cvNote('Οι πελάτες εμφανίζονται μόνο όταν η εφαρμογή είναι συνδεδεμένη με τη βάση δεδομένων.', true); return; }
+  if (!cv.loaded) cvNote('Φόρτωση πελατών…');
+  client.from('customer_overview').select('*').order('last_visit', { ascending: false, nullsFirst: false }).limit(5000).then(function (r) {
+    if (r.error) throw r.error;
+    cv.rows = r.data; cv.loaded = true; cvNote(''); renderCustomers();
+  }).catch(function (e) { cvNote(esc(errText(e)), true); });
+}
+function renderCustomers() {
+  var q = normTxt(cv.q.trim()), qd = cv.q.replace(/\D/g, '');
+  var list = cv.rows.filter(function (c) {
+    if (cv.f === 'regular' && c.visits < 3) return false;
+    if (cv.f === 'noshow' && !c.noshows) return false;
+    if (!q) return true;
+    return normTxt(c.name).indexOf(q) >= 0 || (qd.length >= 3 && String(c.phone_key).indexOf(qd.slice(-8)) >= 0);
+  });
+  if (cv.f === 'regular') list.sort(function (a, b) { return b.visits - a.visits; });
+  if (cv.f === 'noshow') list.sort(function (a, b) { return b.noshows - a.noshows; });
+  $('cvCount').textContent = cv.rows.length + (cv.rows.length === 1 ? ' πελάτης' : ' πελάτες');
+  document.querySelectorAll('[data-cf]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.cf === cv.f); });
+  if (!cv.loaded) { $('cvList').innerHTML = ''; return; }
+  if (!list.length) { $('cvList').innerHTML = '<div class="empty"><b>Δεν βρέθηκε πελάτης</b>' + (cv.q ? 'Δοκιμάστε άλλο όνομα ή τηλέφωνο.' : 'Οι πελάτες εμφανίζονται εδώ μόλις κάνουν κράτηση με τηλέφωνο.') + '</div>'; return; }
+  $('cvList').innerHTML = list.slice(0, 300).map(function (c) {
+    var meta = [];
+    if (c.last_visit) meta.push('Τελευταία: ' + esc(fmtDate(c.last_visit)));
+    if (c.upcoming) meta.push('<span class="chip">Επόμενη κράτηση</span>');
+    if (c.noshows) meta.push('<span class="chip noshow">Δεν ήρθε ' + c.noshows + '</span>');
+    (c.tags || []).forEach(function (t) { meta.push('<span class="tag' + (t === 'Αλλεργία' || t === 'VIP' ? ' hot' : '') + '">' + esc(t) + '</span>'); });
+    if (c.notes) meta.push('📝');
+    return '<button type="button" class="cv-row" data-k="' + esc(c.phone_key) + '"><span style="min-width:0"><span class="cv-name">' + esc(c.name || 'Χωρίς όνομα') + '</span>' +
+      '<span class="cv-meta"><span class="num">' + esc(c.phone || '') + '</span>' + meta.join('') + '</span></span>' +
+      '<span class="cv-visits num">' + c.visits + '<small>' + (c.visits === 1 ? 'επίσκεψη' : 'επισκέψεις') + '</small></span></button>';
+  }).join('') + (list.length > 300 ? '<p class="hint-sm">Εμφανίζονται οι πρώτοι 300. Γράψτε όνομα ή τηλέφωνο για να βρείτε κάποιον άλλο.</p>' : '');
+}
+function showCustView() { closeSheets(); $('appView').hidden = true; $('custView').hidden = false; window.scrollTo(0, 0); loadCustomers(); renderCustomers(); }
+function hideCustView() { $('custView').hidden = true; $('appView').hidden = false; }
+$('m-cust').addEventListener('click', showCustView);
+$('cvBack').addEventListener('click', hideCustView);
+$('cq').addEventListener('input', function () { cv.q = this.value; renderCustomers(); });
+document.querySelectorAll('[data-cf]').forEach(function (b) { b.addEventListener('click', function () { cv.f = b.dataset.cf; renderCustomers(); }); });
+$('cvList').addEventListener('click', function (e) { var b = e.target.closest('.cv-row'); if (b) openCustomer(b.dataset.k); });
+
+function setCustTags(t) { cv.tags = t.slice(); document.querySelectorAll('#cs-tags button').forEach(function (b) { b.setAttribute('aria-pressed', cv.tags.indexOf(b.dataset.t) >= 0); }); }
+$('cs-tags').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; var t = b.dataset.t, i = cv.tags.indexOf(t); if (i >= 0) cv.tags.splice(i, 1); else cv.tags.push(t); setCustTags(cv.tags); });
+function openCustomer(k) {
+  var c = cv.rows.find(function (x) { return x.phone_key === k; }); if (!c) return;
+  cv.cur = c;
+  $('csName').textContent = c.name || 'Χωρίς όνομα';
+  $('csSub').textContent = [c.phone, c.email].filter(Boolean).join(' · ');
+  function st(n, l, bad) { return '<div' + (bad && n ? ' class="bad"' : '') + '><b class="num">' + n + '</b><span>' + l + '</span></div>'; }
+  $('csStats').innerHTML = st(c.visits, c.visits === 1 ? 'επίσκεψη' : 'επισκέψεις') + st(c.noshows, 'δεν ήρθε', true) + st(c.cancellations, 'ακυρώσεις') + st(c.avg_people ? String(c.avg_people).replace('.', ',') : '–', 'άτομα κατά μ.ό.');
+  $('csDates').textContent = 'Πρώτη κράτηση: ' + fmtDate(c.first_date) + (c.last_visit ? ' · Τελευταία επίσκεψη: ' + fmtDate(c.last_visit) : '') + (c.online ? ' · ' + c.online + ' online' : '');
+  var tel = String(c.phone || '').replace(/[^\d+]/g, '');
+  $('csCall').href = tel ? 'tel:' + tel : '#'; $('csCallNum').textContent = c.phone || 'Χωρίς τηλέφωνο';
+  $('cs-notes').value = c.notes || ''; setCustTags(c.tags || []);
+  $('csErr').hidden = true; $('csDel').dataset.armed = ''; $('csDel').textContent = 'Διαγραφή πελάτη και ιστορικού';
+  $('csHist').innerHTML = '<p class="hint-sm">Φόρτωση…</p>';
+  openSheet('custSheet');
+  client.from('bookings').select('*').eq('phone_key', k).order('date', { ascending: false }).order('time', { ascending: false }).limit(200).then(function (r) {
+    if (r.error) throw r.error;
+    if (!cv.cur || cv.cur.phone_key !== k) return;
+    $('csHist').innerHTML = r.data.map(fromDb).map(function (b) {
+      var s = STATUS[b.status] || STATUS.confirmed;
+      return '<div><span class="num"><b>' + esc(fmtDate(b.date)) + '</b> ' + esc(b.time) + '</span><small>' + b.people + ' άτ.' + (b.table ? ' · τραπ. ' + esc(b.table) : '') + (b.source === 'online' ? ' · online' : '') + (b.notes ? ' · ' + esc(b.notes) : '') + '</small><span class="chip ' + esc(b.status) + '">' + s.l + '</span></div>';
+    }).join('') || '<p class="hint-sm">Καμία κράτηση.</p>';
+  }).catch(function (e) { $('csHist').innerHTML = '<p class="err">' + esc(errText(e)) + '</p>'; });
+}
+$('csClose').addEventListener('click', closeSheets);
+$('csSave').addEventListener('click', function () {
+  var c = cv.cur; if (!c) return;
+  var notes = $('cs-notes').value.trim(), tags = cv.tags.slice(), btn = $('csSave'); btn.disabled = true;
+  client.from('customers').upsert({ phone_key: c.phone_key, notes: notes, tags: tags }).then(function (r) {
+    btn.disabled = false; if (r.error) throw r.error;
+    c.notes = notes; c.tags = tags; renderCustomers(); closeSheets(); toast('Αποθηκεύτηκε: ' + (c.name || c.phone));
+  }).catch(function (e) { btn.disabled = false; $('csErr').textContent = errText(e); $('csErr').hidden = false; });
+});
+$('csBook').addEventListener('click', function () {
+  var c = cv.cur; if (!c) return;
+  closeSheets(); hideCustView(); openForm(null);
+  $('f-phone').value = c.phone || ''; $('f-name').value = c.name || ''; lookup();
+});
+$('csDel').addEventListener('click', function () {
+  var c = cv.cur, b = $('csDel'); if (!c) return;
+  if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Σίγουρα; Σβήνει ' + c.bookings + (c.bookings === 1 ? ' κράτηση' : ' κρατήσεις') + '. Πατήστε ξανά'; return; }
+  b.disabled = true;
+  client.from('bookings').delete().eq('phone_key', c.phone_key).then(function (r) {
+    if (r.error) throw r.error; return client.from('customers').delete().eq('phone_key', c.phone_key);
+  }).then(function (r) {
+    b.disabled = false; if (r && r.error) throw r.error;
+    cv.rows = cv.rows.filter(function (x) { return x.phone_key !== c.phone_key; }); renderCustomers(); closeSheets(); toast('Διαγράφηκε ο πελάτης ' + (c.name || ''));
+  }).catch(function (e) { b.disabled = false; $('csErr').textContent = errText(e); $('csErr').hidden = false; });
+});
+
 /* ---------------- login + boot ---------------- */
-function showApp() { $('loginView').hidden = true; $('menuView').hidden = true; $('appView').hidden = false; subscribe(); }
+function showApp() { $('loginView').hidden = true; $('menuView').hidden = true; $('custView').hidden = true; $('appView').hidden = false; subscribe(); }
 function showLogin(msg) {
-  $('appView').hidden = true; $('menuView').hidden = true; $('loginView').hidden = false;
+  $('appView').hidden = true; $('menuView').hidden = true; $('custView').hidden = true; $('loginView').hidden = false;
   if (!C.STAFF_EMAIL) $('emailRow').hidden = false;
   $('l-email').value = C.STAFF_EMAIL || '';
   if (msg) { $('lErr').textContent = msg; $('lErr').hidden = false; }
