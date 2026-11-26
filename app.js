@@ -46,7 +46,7 @@ function fromDb(r) {
   return { id: r.id, date: r.date, time: r.time, name: r.name, phone: r.phone || '', phoneKey: r.phone_key || '',
     people: r.people, table: r.table_no || '', notes: r.notes || '', tags: r.tags || [], status: r.status,
     walkin: !!r.walkin, createdAt: r.created_at, updatedAt: r.updated_at,
-    source: r.source || 'staff', email: r.email || '', ref: r.ref || '' };
+    source: r.source || 'staff', email: r.email || '', ref: r.ref || '', reviewSentAt: r.review_sent_at || '' };
 }
 function toDb(b) {
   return { date: b.date, time: b.time, name: b.name, phone: b.phone, phone_key: b.phoneKey, people: b.people,
@@ -681,7 +681,7 @@ function openCustomer(k) {
     if (!cv.cur || cv.cur.phone_key !== k) return;
     $('csHist').innerHTML = r.data.map(fromDb).map(function (b) {
       var s = STATUS[b.status] || STATUS.confirmed;
-      return '<div><span class="num"><b>' + esc(fmtDate(b.date)) + '</b> ' + esc(b.time) + '</span><small>' + b.people + ' άτ.' + (b.table ? ' · τραπ. ' + esc(b.table) : '') + (b.source === 'online' ? ' · online' : '') + (b.notes ? ' · ' + esc(b.notes) : '') + '</small><span class="chip ' + esc(b.status) + '">' + s.l + '</span></div>';
+      return '<div><span class="num"><b>' + esc(fmtDate(b.date)) + '</b> ' + esc(b.time) + '</span><small>' + b.people + ' άτ.' + (b.table ? ' · τραπ. ' + esc(b.table) : '') + (b.source === 'online' ? ' · online' : '') + (b.reviewSentAt ? ' · email κριτικής ' + esc(fmtDate(String(b.reviewSentAt).slice(0, 10))) : '') + (b.notes ? ' · ' + esc(b.notes) : '') + '</small><span class="chip ' + esc(b.status) + '">' + s.l + '</span></div>';
     }).join('') || '<p class="hint-sm">Καμία κράτηση.</p>';
   }).catch(function (e) { $('csHist').innerHTML = '<p class="err">' + esc(errText(e)) + '</p>'; });
 }
