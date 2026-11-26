@@ -8,6 +8,7 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RESEND = Deno.env.get("RESEND_API_KEY") ?? "";
 const FROM = Deno.env.get("MAIL_FROM") ?? "Mostra Meze Tavern <kratiseis@mostrameze.com>";
 const REPLY_TO = Deno.env.get("MAIL_REPLY_TO") ?? "mostrameze@gmail.com";
+const NOTIFY = Deno.env.get("MAIL_NOTIFY") ?? "mostrameze@gmail.com"; // the restaurant's inbox (test sends go only here)
 const GOOGLE = "https://search.google.com/local/writereview?placeid=ChIJgwz68YEz5xQRYO8XuChp7-s";
 const TRIP = "https://www.tripadvisor.com/Restaurant_Review-g190382-d23873437-Reviews-Mostra_Meze_Tavern-Limassol_City_Limassol.html";
 
@@ -67,8 +68,22 @@ function mail(b: any) {
 
 Deno.serve(async (req) => {
   const json = (o: unknown) => new Response(JSON.stringify(o), { headers: { "Content-Type": "application/json" } });
-  let dry = false;
-  try { dry = (await req.json()).dry === true; } catch { /* empty body */ }
+  let dry = false, preview = false;
+  try { const j = await req.json(); dry = j.dry === true; preview = j.preview === true; } catch { /* empty body */ }
+  if (preview && RESEND) { // test: both language versions to the restaurant's own inbox, no booking touched
+    let ok = 0;
+    for (const lang of ["el", "en"]) {
+      const m = mail({ name: "", lang });
+      const s = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${RESEND}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: FROM, to: [NOTIFY], reply_to: REPLY_TO, subject: "[ΔΟΚΙΜΗ] " + m.subject, html: m.html, text: m.text }),
+      });
+      if (s.ok) ok++; else console.error("resend", s.status, await s.text());
+      await sleep(600);
+    }
+    return json({ preview: true, sent: ok, to: NOTIFY });
+  }
   if (!RESEND && !dry) return json({ sent: 0, reason: "not_configured" });
   const now = cyprusNow();
   if (now.hour < 11 && !dry) return json({ sent: 0, reason: "too_early" }); // never before 11:00 Cyprus time
