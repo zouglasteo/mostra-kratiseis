@@ -377,7 +377,7 @@ function markPeople() {
   var n = parseInt($('f-people').value, 10);
   document.querySelectorAll('#pGrid button').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.n === n); });
 }
-$('pGrid').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; $('f-people').value = b.dataset.n; markPeople(); });
+$('pGrid').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; $('f-people').value = b.dataset.n; markPeople(); openPicker(); }); /* like i-host: choosing people opens the table plan */
 $('f-people').addEventListener('input', markPeople);
 
 /* ---------------- tables (plan + picker + editor) ---------------- */
@@ -429,7 +429,7 @@ function renderPicker() {
       '<b class="num">' + esc(t.name) + '</b><span class="cap num">(' + t.min_people + '-' + t.max_people + ')</span>' + lines + '</button>';
   }).join('');
   var seats = tp.sel.reduce(function (s, n) { var t = TB.list.find(function (x) { return x.name === n; }); return s + (t ? t.max_people : 0); }, 0);
-  $('tpSum').textContent = 'Χωράνε ' + seats + '/' + tp.people;
+  $('tpSum').textContent = 'Κάθονται ' + seats + '/' + tp.people;
   $('tpSum').className = 'sum' + (tp.sel.length && seats >= tp.people ? ' ok' : '');
   var other = tp.sel.filter(function (n) { var t = TB.list.find(function (x) { return x.name === n; }); return t && t.zone !== tp.zone; });
   $('tpHint').textContent = (tp.sel.length ? 'Επιλεγμένα: ' + tp.sel.join(' + ') + (other.length ? ' (και σε άλλη ζώνη)' : '') + '. ' : '') +
