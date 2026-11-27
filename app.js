@@ -248,11 +248,11 @@ function setStatus(b, status) {
 var lastFocus = null;
 function openSheet(id) { lastFocus = document.activeElement; $('scrim').hidden = false; $(id).hidden = false; }
 function closeSheets() {
-  $('scrim').hidden = true; ['actSheet', 'formSheet', 'menuSheet', 'itemSheet', 'custSheet'].forEach(function (id) { $(id).hidden = true; });
+  $('scrim').hidden = true; $('tblPicker').hidden = true; ['actSheet', 'formSheet', 'menuSheet', 'itemSheet', 'custSheet', 'tblEdSheet'].forEach(function (id) { $(id).hidden = true; });
   current = null; if (lastFocus && lastFocus.focus) try { lastFocus.focus({ preventScroll: true }); } catch (e) {}
 }
 $('scrim').addEventListener('click', closeSheets);
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSheets(); });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (!$('tblPicker').hidden) closePicker(); else closeSheets(); } });
 
 function openActions(b) {
   current = b;
@@ -296,6 +296,7 @@ function openForm(b, opts) {
   if (!Array.prototype.some.call($('f-time').options, function (o) { return o.value === t; })) { var o = document.createElement('option'); o.value = t; o.textContent = t; $('f-time').appendChild(o); }
   $('f-time').value = t;
   $('f-people').value = b ? b.people : 2;
+  markPeople();
   $('f-table').value = b ? (b.table || '') : '';
   $('f-notes').value = b ? (b.notes || '') : '';
   $('f-status').value = b ? b.status : (opts.walkin ? 'seated' : 'confirmed');
@@ -307,8 +308,8 @@ function openForm(b, opts) {
   setTimeout(function () { (opts.walkin ? $('f-people') : (b ? $('f-name') : $('f-phone'))).focus(); }, 80);
   if (b && b.phone) lookup();
 }
-$('pMinus').addEventListener('click', function () { $('f-people').value = Math.max(1, (+$('f-people').value || 1) - 1); });
-$('pPlus').addEventListener('click', function () { $('f-people').value = Math.min(99, (+$('f-people').value || 0) + 1); });
+$('pMinus').addEventListener('click', function () { $('f-people').value = Math.max(1, (+$('f-people').value || 1) - 1); markPeople(); });
+$('pPlus').addEventListener('click', function () { $('f-people').value = Math.min(99, (+$('f-people').value || 0) + 1); markPeople(); });
 $('cancelForm').addEventListener('click', closeSheets);
 
 /* customer history by phone */
@@ -365,6 +366,153 @@ $('delBtn').addEventListener('click', function () {
   var name = editing.name;
   store.remove(editing.id).then(function () { closeSheets(); toast('Διαγράφηκε: ' + name); })
     .catch(function (e) { $('formErr').textContent = errText(e); $('formErr').hidden = false; });
+});
+
+/* ---------------- people grid ---------------- */
+(function () {
+  var h = ''; for (var i = 1; i <= 24; i++) h += '<button type="button" data-n="' + i + '" aria-pressed="false">' + i + '</button>';
+  $('pGrid').innerHTML = h;
+})();
+function markPeople() {
+  var n = parseInt($('f-people').value, 10);
+  document.querySelectorAll('#pGrid button').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.n === n); });
+}
+$('pGrid').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; $('f-people').value = b.dataset.n; markPeople(); });
+$('f-people').addEventListener('input', markPeople);
+
+/* ---------------- tables (plan + picker + editor) ---------------- */
+var TB = { list: [], loaded: false };
+var SIT = C.tableMinutes || 120; /* a table counts as taken this many minutes around a booking */
+var TB_KEY = 'mostra-demo-tables';
+function sortTables(a) { return a.slice().sort(function (x, y) { return (x.sort || 0) - (y.sort || 0); }); }
+function loadTables() {
+  if (!client) {
+    try { TB.list = JSON.parse(localStorage.getItem(TB_KEY) || 'null') || []; } catch (e) { TB.list = []; }
+    if (!TB.list.length) TB.list = [1, 2, 3, 4, 5, 6, 7, 8].map(function (n, i) { return { id: uid(), zone: i < 4 ? 'Μέσα' : 'Έξω', name: String(n), min_people: 1, max_people: n % 2 ? 2 : 4, sort: i }; });
+    TB.loaded = true; return Promise.resolve(TB.list);
+  }
+  return client.from('restaurant_tables').select('*').order('sort').then(function (r) {
+    if (r.error) throw r.error; TB.list = r.data; TB.loaded = true; return TB.list;
+  });
+}
+function tableNames(v) { return String(v || '').split(/\s*[+,&\/]\s*|\s+/).filter(Boolean); }
+function zonesOf(list) { var z = []; list.forEach(function (t) { if (z.indexOf(t.zone) < 0) z.push(t.zone); }); return z; }
+function dayBookings(date) {
+  if (date === state.date && !state.loading) return Promise.resolve(state.bookings);
+  if (!client) return store.all().then(function (r) { return r.filter(function (b) { return b.date === date; }); });
+  return client.from('bookings').select('*').eq('date', date).then(function (r) { if (r.error) throw r.error; return r.data.map(fromDb); });
+}
+
+var tp = { zone: '', sel: [], day: [], people: 2, time: '20:00', date: '' };
+function tpOpen() { return !$('tblPicker').hidden; }
+function closePicker() { $('tblPicker').hidden = true; try { $('tblOpen').focus({ preventScroll: true }); } catch (e) {} }
+function tableState(t) {
+  var t0 = mins(tp.time), mine = tp.day.filter(function (b) {
+    return (!editing || b.id !== editing.id) && (b.status === 'confirmed' || b.status === 'seated') && tableNames(b.table).indexOf(t.name) >= 0;
+  }).sort(function (a, b) { return mins(a.time) - mins(b.time); });
+  var busy = mine.some(function (b) { return Math.abs(mins(b.time) - t0) < SIT; });
+  return { mine: mine, busy: busy, fit: !busy && tp.people >= t.min_people && tp.people <= t.max_people };
+}
+function renderPicker() {
+  var zones = zonesOf(TB.list);
+  $('tpZones').hidden = zones.length < 2;
+  $('tpZones').innerHTML = zones.map(function (z) { return '<button type="button" data-z="' + esc(z) + '" aria-pressed="' + (z === tp.zone) + '">' + esc(z) + '</button>'; }).join('');
+  var t0 = mins(tp.time);
+  $('tpGrid').innerHTML = TB.list.filter(function (t) { return t.zone === tp.zone; }).map(function (t) {
+    var s = tableState(t), sel = tp.sel.indexOf(t.name) >= 0;
+    var lines = s.mine.slice(0, 3).map(function (b) {
+      var hit = Math.abs(mins(b.time) - t0) < SIT;
+      return '<span class="bk1' + (hit ? ' hit' : '') + '">' + esc(b.time) + ' ' + esc(String(b.name || '').split(' ')[0]) + ' ' + esc(b.people) + 'άτ</span>';
+    }).join('') + (s.mine.length > 3 ? '<span class="bk1">+' + (s.mine.length - 3) + ' ακόμα</span>' : '') + (s.mine.length ? '' : '<span class="bk1 none">ελεύθερο</span>');
+    var label = 'Τραπέζι ' + t.name + ', ' + t.min_people + ' έως ' + t.max_people + ' άτομα' + (s.busy ? ', πιασμένο εκείνη την ώρα' : s.fit ? ', προτείνεται' : '');
+    return '<button type="button" class="tcard' + (sel ? ' sel' : s.busy ? ' busy' : s.fit ? ' fit' : '') + '" data-t="' + esc(t.name) + '" aria-pressed="' + sel + '" aria-label="' + esc(label) + '">' +
+      '<b class="num">' + esc(t.name) + '</b><span class="cap num">(' + t.min_people + '-' + t.max_people + ')</span>' + lines + '</button>';
+  }).join('');
+  var seats = tp.sel.reduce(function (s, n) { var t = TB.list.find(function (x) { return x.name === n; }); return s + (t ? t.max_people : 0); }, 0);
+  $('tpSum').textContent = 'Χωράνε ' + seats + '/' + tp.people;
+  $('tpSum').className = 'sum' + (tp.sel.length && seats >= tp.people ? ' ok' : '');
+  var other = tp.sel.filter(function (n) { var t = TB.list.find(function (x) { return x.name === n; }); return t && t.zone !== tp.zone; });
+  $('tpHint').textContent = (tp.sel.length ? 'Επιλεγμένα: ' + tp.sel.join(' + ') + (other.length ? ' (και σε άλλη ζώνη)' : '') + '. ' : '') +
+    'Πατήστε πολλά τραπέζια για να τα ενώσετε. Ένα τραπέζι θεωρείται πιασμένο ' + (SIT / 60) + ' ώρες γύρω από κάθε κράτηση.';
+}
+function openPicker() {
+  tp.date = $('f-date').value || state.date; tp.time = $('f-time').value; tp.people = parseInt($('f-people').value, 10) || 1;
+  $('tpSub').textContent = fmtDate(tp.date) + ' · ' + tp.time + ' · ' + tp.people + ' άτομα';
+  $('tpGrid').innerHTML = '<p class="hint-sm">Φόρτωση…</p>'; $('tpZones').innerHTML = ''; $('tpSum').textContent = ''; $('tpHint').textContent = '';
+  $('tblPicker').hidden = false;
+  Promise.all([TB.loaded ? TB.list : loadTables(), dayBookings(tp.date)]).then(function (res) {
+    tp.day = res[1];
+    if (!TB.list.length) { $('tpGrid').innerHTML = ''; $('tpHint').textContent = 'Δεν έχουν οριστεί τραπέζια. Προσθέστε τα από ☰ → Τραπέζια.'; return; }
+    tp.sel = tableNames($('f-table').value).filter(function (n) { return TB.list.some(function (t) { return t.name === n; }); });
+    var first = TB.list.find(function (t) { return t.name === tp.sel[0]; }) || TB.list.find(function (t) { return tableState(t).fit; }) || TB.list[0];
+    tp.zone = first.zone; renderPicker();
+  }).catch(function (e) { $('tpGrid').innerHTML = '<p class="err">' + esc(errText(e)) + '</p>'; });
+}
+$('tblOpen').addEventListener('click', openPicker);
+$('tpClose').addEventListener('click', closePicker);
+$('tpZones').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; tp.zone = b.dataset.z; renderPicker(); });
+$('tpGrid').addEventListener('click', function (e) {
+  var b = e.target.closest('.tcard'); if (!b) return; var n = b.dataset.t, i = tp.sel.indexOf(n);
+  if (i >= 0) tp.sel.splice(i, 1); else tp.sel.push(n); renderPicker();
+});
+$('tpSave').addEventListener('click', function () { $('f-table').value = tp.sel.join('+'); closePicker(); });
+$('tpClear').addEventListener('click', function () { $('f-table').value = ''; closePicker(); });
+
+/* editor */
+var te = { rows: [], removed: [] };
+function renderTe() {
+  $('teZones').innerHTML = zonesOf(te.rows).map(function (z) { return '<option value="' + esc(z) + '">'; }).join('');
+  $('teList').innerHTML = te.rows.map(function (r, i) {
+    return '<div class="te-row"><input class="input" list="teZones" data-i="' + i + '" data-k="zone" value="' + esc(r.zone) + '" aria-label="Ζώνη">' +
+      '<input class="input num" data-i="' + i + '" data-k="name" value="' + esc(r.name) + '" aria-label="Τραπέζι">' +
+      '<input class="input num" type="number" inputmode="numeric" min="1" data-i="' + i + '" data-k="min_people" value="' + r.min_people + '" aria-label="Από άτομα">' +
+      '<input class="input num" type="number" inputmode="numeric" min="1" data-i="' + i + '" data-k="max_people" value="' + r.max_people + '" aria-label="Έως άτομα">' +
+      '<button type="button" class="x" data-del="' + i + '" aria-label="Αφαίρεση τραπεζιού ' + esc(r.name) + '">×</button></div>';
+  }).join('') || '<p class="hint-sm">Κανένα τραπέζι ακόμα.</p>';
+}
+function openTablesEd() {
+  closeSheets(); $('teErr').hidden = true;
+  loadTables().catch(function () { return TB.list; }).then(function () {
+    te.rows = TB.list.map(function (t) { return { id: t.id, zone: t.zone, name: t.name, min_people: t.min_people, max_people: t.max_people }; });
+    te.removed = []; renderTe(); openSheet('tblEdSheet');
+  });
+}
+$('m-tables').addEventListener('click', openTablesEd);
+$('teList').addEventListener('input', function (e) {
+  var el = e.target; if (el.dataset.i == null) return; var r = te.rows[+el.dataset.i];
+  r[el.dataset.k] = /people/.test(el.dataset.k) ? parseInt(el.value, 10) || 0 : el.value;
+});
+$('teList').addEventListener('change', function (e) { if (e.target.dataset.k === 'zone') renderTe(); });
+$('teList').addEventListener('click', function (e) {
+  var b = e.target.closest('[data-del]'); if (!b) return; var r = te.rows.splice(+b.dataset.del, 1)[0];
+  if (r && r.id) te.removed.push(r.id); renderTe();
+});
+$('teAdd').addEventListener('click', function () {
+  var last = te.rows[te.rows.length - 1], max = te.rows.reduce(function (m, r) { return Math.max(m, parseInt(r.name, 10) || 0); }, 0);
+  te.rows.push({ id: null, zone: last ? last.zone : 'Μέσα', name: String(max + 1), min_people: 1, max_people: 4 }); renderTe();
+  var ins = $('teList').querySelectorAll('[data-k="name"]'); if (ins.length) ins[ins.length - 1].focus();
+});
+$('teCancel').addEventListener('click', closeSheets);
+$('teSave').addEventListener('click', function () {
+  var err = $('teErr'), seen = {}, bad = '';
+  te.rows.forEach(function (r) {
+    r.zone = String(r.zone || '').trim() || 'Μέσα'; r.name = String(r.name || '').trim();
+    if (!r.name) bad = bad || 'Κάθε τραπέζι χρειάζεται αριθμό ή όνομα.';
+    else if (/[\s+,&\/]/.test(r.name)) bad = bad || 'Το τραπέζι «' + r.name + '»: χωρίς κενά ή +.';
+    else if (seen[r.name]) bad = bad || 'Το τραπέζι ' + r.name + ' υπάρχει δύο φορές.';
+    else if (!(r.min_people >= 1) || !(r.max_people >= r.min_people)) bad = bad || 'Τραπέζι ' + r.name + ': το «Έως» πρέπει να είναι ίσο ή μεγαλύτερο από το «Από».';
+    seen[r.name] = 1;
+  });
+  if (bad) { err.textContent = bad; err.hidden = false; return; }
+  var rows = te.rows.map(function (r, i) { return { id: r.id || uid(), zone: r.zone, name: r.name, min_people: r.min_people, max_people: r.max_people, sort: i + 1 }; });
+  var btn = $('teSave'); btn.disabled = true; err.hidden = true;
+  var done = function () { btn.disabled = false; TB.list = sortTables(rows); TB.loaded = true; closeSheets(); toast('Αποθηκεύτηκαν ' + rows.length + ' τραπέζια'); };
+  if (!client) { try { localStorage.setItem(TB_KEY, JSON.stringify(rows)); } catch (e) {} done(); return; }
+  var del = te.removed.length ? client.from('restaurant_tables').delete().in('id', te.removed) : Promise.resolve({});
+  Promise.resolve(del).then(function (r) {
+    if (r && r.error) throw r.error; return rows.length ? client.from('restaurant_tables').upsert(rows) : {};
+  }).then(function (r) { if (r && r.error) throw r.error; done(); })
+    .catch(function (e) { btn.disabled = false; err.textContent = errText(e); err.hidden = false; });
 });
 
 /* ---------------- top bar ---------------- */
@@ -712,7 +860,7 @@ $('csDel').addEventListener('click', function () {
 });
 
 /* ---------------- login + boot ---------------- */
-function showApp() { $('loginView').hidden = true; $('menuView').hidden = true; $('custView').hidden = true; $('appView').hidden = false; subscribe(); }
+function showApp() { $('loginView').hidden = true; $('menuView').hidden = true; $('custView').hidden = true; $('appView').hidden = false; subscribe(); loadTables().catch(function () {}); }
 function showLogin(msg) {
   $('appView').hidden = true; $('menuView').hidden = true; $('custView').hidden = true; $('loginView').hidden = false;
   if (!C.STAFF_EMAIL) $('emailRow').hidden = false;

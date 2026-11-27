@@ -210,6 +210,48 @@ textarea.input{min-height:70px;resize:vertical}
 .sw::after{content:"";position:absolute;top:3px;left:25px;width:24px;height:24px;border-radius:50%;background:#fff;transition:left .15s}
 .sw[aria-checked="false"]{background:var(--off)}
 .sw[aria-checked="false"]::after{left:3px}
+.pgrid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.pgrid button{border:1px solid var(--line);background:var(--bg);border-radius:10px;height:44px;font-size:1.05rem;font-weight:600;color:inherit}
+.pgrid button[aria-pressed="true"]{background:var(--wall);color:var(--wall-ink);border-color:transparent}
+.pmore{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px}
+.pmore small{color:var(--muted);font-size:.82rem}
+.pmore .stepper{width:170px}
+.pmore .stepper button{height:40px;width:44px}
+.tblrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.tblrow .btn{padding:0 14px;min-height:48px}
+.tp{position:fixed;inset:0;z-index:45;background:var(--card);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top)}
+@media (min-width:760px){.tp{left:50%;right:auto;width:600px;transform:translateX(-50%);box-shadow:0 0 40px rgba(0,0,0,.35)}}
+.tp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:14px 16px 4px}
+.tp-head h3{font-family:var(--display);font-size:1.3rem;margin:0}
+.tp-head p{margin:2px 0 0;color:var(--muted);font-size:.88rem}
+.tp-x{border:0;background:none;font-size:1.8rem;line-height:1;color:var(--wall);padding:0 4px}
+.tp-zones{display:flex;gap:4px;overflow-x:auto;padding:4px 16px 0;border-bottom:1px solid var(--line)}
+.tp-zones button{border:0;background:none;padding:10px 12px;font-size:1rem;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;white-space:nowrap}
+.tp-zones button[aria-pressed="true"]{color:var(--wall);border-bottom-color:var(--wall)}
+.tp-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:10px 16px;font-size:.84rem;color:var(--muted)}
+.tp-legend i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.tp-legend .sum{margin-left:auto;font-weight:700;color:var(--ink)}
+.tp-legend .sum.ok{color:var(--ok)}
+.tp-body{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:4px 16px 16px}
+.tp-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:360px){.tp-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.tcard{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:3px;min-width:0;border:2px solid var(--line);background:var(--bg);border-radius:12px;padding:8px 6px;text-align:center}
+.tcard:focus-visible{outline:3px solid var(--warn)}
+.tcard b{font-family:var(--display);font-size:1.3rem;line-height:1.1}
+.tcard .cap{font-size:.78rem;color:var(--muted)}
+.tcard .bk1{font-size:.7rem;line-height:1.25;background:var(--card);border-radius:6px;padding:3px 4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tcard .bk1.hit{background:var(--bad-soft);color:var(--bad);font-weight:700}
+.tcard .bk1.none{color:var(--muted);opacity:.6}
+.tcard.fit{background:var(--ok-soft);border-color:transparent}
+.tcard.busy{background:var(--bad-soft);border-color:transparent}
+.tcard.sel{border-color:var(--wall);background:var(--wall-soft);box-shadow:inset 0 0 0 1px var(--wall)}
+.tcard.sel b::after{content:" ✓";color:var(--wall)}
+.tp-foot{display:flex;gap:8px;padding:10px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
+.te-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.8fr) minmax(0,.6fr) minmax(0,.6fr) 40px;gap:6px;align-items:center}
+.te-row .input{padding:8px;min-height:42px;font-size:.95rem}
+.te-row .x{border:0;background:none;color:var(--bad);font-size:1.3rem}
+.te-head{font:600 .66rem var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.te-list{display:grid;gap:6px}
 .toast{position:fixed;left:50%;bottom:calc(88px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-weight:600;font-size:.9rem;z-index:50;max-width:calc(100% - 32px);text-align:center}
 </style>
 </head>
@@ -405,6 +447,30 @@ textarea.input{min-height:70px;resize:vertical}
   </div>
 </div>
 
+<!-- ============ TABLE PICKER ============ -->
+<div id="tblPicker" class="tp" role="dialog" aria-modal="true" aria-labelledby="tpTitle" hidden>
+  <div class="tp-head"><div><h3 id="tpTitle">Τραπέζι</h3><p id="tpSub"></p></div><button type="button" class="tp-x" id="tpClose" aria-label="Κλείσιμο">×</button></div>
+  <div class="tp-zones" id="tpZones" role="group" aria-label="Ζώνες"></div>
+  <div class="tp-legend"><span><i style="background:var(--ok-soft);border:1px solid var(--ok)"></i>Προτεινόμενα</span><span><i style="background:var(--bad-soft);border:1px solid var(--bad)"></i>Πιασμένα εκείνη την ώρα</span><span class="sum" id="tpSum"></span></div>
+  <div class="tp-body"><div class="tp-grid" id="tpGrid"></div><p class="hint-sm" id="tpHint"></p></div>
+  <div class="tp-foot"><button type="button" class="btn ghost" id="tpClear">Χωρίς τραπέζι</button><button type="button" class="btn main" id="tpSave">Αποθήκευση</button></div>
+</div>
+
+<!-- ============ TABLES EDITOR ============ -->
+<div id="tblEdSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="teTitle" hidden>
+  <div class="grab"></div>
+  <div class="wrap">
+    <h3 id="teTitle">Τραπέζια</h3>
+    <p class="sub">Η ζώνη γίνεται καρτέλα στο πλάνο (π.χ. Εξωτερικός, Πόρτα, Μέσα). «Από–Έως»: πόσα άτομα χωράει το τραπέζι.</p>
+    <div class="te-row te-head"><span>Ζώνη</span><span>Τραπέζι</span><span>Από</span><span>Έως</span><span></span></div>
+    <div class="te-list" id="teList"></div>
+    <datalist id="teZones"></datalist>
+    <p style="margin:10px 0 0"><button type="button" class="btn ghost" id="teAdd">+ Προσθήκη τραπεζιού</button></p>
+    <p class="err" id="teErr" hidden></p>
+    <div class="formbar"><button type="button" class="btn ghost" id="teCancel">Άκυρο</button><button type="button" class="btn main" id="teSave">Αποθήκευση</button></div>
+  </div>
+</div>
+
 <div id="menuSheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="menuTitle" hidden>
   <div class="grab"></div>
   <div class="wrap">
@@ -412,6 +478,7 @@ textarea.input{min-height:70px;resize:vertical}
     <p class="sub" id="menuSub"></p>
     <div class="menu-list">
       <button type="button" class="act" id="m-cust">Πελάτες<small>Επισκέψεις, ιστορικό, σημειώσεις</small></button>
+      <button type="button" class="act" id="m-tables">Τραπέζια<small>Ζώνες, αριθμοί, πόσα άτομα χωράνε</small></button>
       <button type="button" class="act" id="m-menu">Μενού εστιατορίου<small>Τιμές, πιάτα, ό,τι τελείωσε σήμερα</small></button>
       <button type="button" class="act" id="m-export">Εξαγωγή όλων των κρατήσεων<small>Αρχείο CSV για Excel</small></button>
       <button type="button" class="act" id="m-install" hidden>Εγκατάσταση στο κινητό<small>Προσθέτει εικονίδιο στην αρχική οθόνη</small></button>
@@ -435,11 +502,14 @@ textarea.input{min-height:70px;resize:vertical}
         <label class="field"><span>Ημέρα</span><input class="input num" id="f-date" type="date"></label>
         <label class="field"><span>Ώρα άφιξης</span><select class="input num" id="f-time"></select></label>
       </div>
-      <div class="two">
-        <div class="field"><span>Άτομα</span>
+      <div class="field"><span>Άτομα</span>
+        <div class="pgrid num" id="pGrid" role="group" aria-label="Άτομα"></div>
+        <div class="pmore"><small>Άλλος αριθμός</small>
           <div class="stepper"><button type="button" id="pMinus" aria-label="Λιγότερα άτομα">−</button><input id="f-people" class="num" type="number" inputmode="numeric" min="1" max="99" value="2" aria-label="Άτομα"><button type="button" id="pPlus" aria-label="Περισσότερα άτομα">+</button></div>
         </div>
-        <label class="field"><span>Τραπέζι</span><input class="input" id="f-table" type="text" autocomplete="off" placeholder="π.χ. 12 ή Έξω"></label>
+      </div>
+      <div class="field"><span>Τραπέζι</span>
+        <div class="tblrow"><input class="input" id="f-table" type="text" autocomplete="off" placeholder="π.χ. 12 ή Έξω"><button type="button" class="btn ghost" id="tblOpen">Πλάνο τραπεζιών</button></div>
       </div>
       <div class="field"><span>Ετικέτες</span><div class="quick" id="f-tags"></div></div>
       <label class="field"><span>Σχόλια</span><textarea class="input" id="f-notes" placeholder="Αλλεργίες, γενέθλια, θέση…"></textarea></label>

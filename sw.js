@@ -1,7 +1,7 @@
 /* Mostra Κρατήσεις – service worker.
    Κρατάει τα αρχεία της εφαρμογής ώστε να ανοίγει γρήγορα και χωρίς σήμα.
    Τα δεδομένα των κρατήσεων ΔΕΝ αποθηκεύονται εδώ. */
-var CACHE = 'mostra-kratiseis-v7';
+var CACHE = 'mostra-kratiseis-v8';
 var SHELL = ['./', 'index.html', 'app.js', 'config.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/logo.png'];
 
 self.addEventListener('install', function (e) {
