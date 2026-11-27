@@ -248,11 +248,11 @@ function setStatus(b, status) {
 var lastFocus = null;
 function openSheet(id) { lastFocus = document.activeElement; $('scrim').hidden = false; $(id).hidden = false; }
 function closeSheets() {
-  $('scrim').hidden = true; $('tblPicker').hidden = true; ['actSheet', 'formSheet', 'menuSheet', 'itemSheet', 'custSheet', 'tblEdSheet'].forEach(function (id) { $(id).hidden = true; });
+  $('scrim').hidden = true; $('tblPicker').hidden = true; $('pplPicker').hidden = true; ['actSheet', 'formSheet', 'menuSheet', 'itemSheet', 'custSheet', 'tblEdSheet'].forEach(function (id) { $(id).hidden = true; });
   current = null; if (lastFocus && lastFocus.focus) try { lastFocus.focus({ preventScroll: true }); } catch (e) {}
 }
 $('scrim').addEventListener('click', closeSheets);
-document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (!$('tblPicker').hidden) closePicker(); else closeSheets(); } });
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (!$('pplPicker').hidden) closePeople(); else if (!$('tblPicker').hidden) closePicker(); else closeSheets(); } });
 
 function openActions(b) {
   current = b;
@@ -298,6 +298,7 @@ function openForm(b, opts) {
   $('f-people').value = b ? b.people : 2;
   markPeople();
   $('f-table').value = b ? (b.table || '') : '';
+  markTable();
   $('f-notes').value = b ? (b.notes || '') : '';
   $('f-status').value = b ? b.status : (opts.walkin ? 'seated' : 'confirmed');
   setTags(b ? (b.tags || []) : []);
@@ -305,11 +306,9 @@ function openForm(b, opts) {
   $('formErr').hidden = true; $('formErr').dataset.okClosed = ''; $('history').hidden = true;
   $('formSheet').dataset.walkin = opts.walkin ? '1' : '';
   openSheet('formSheet');
-  setTimeout(function () { (opts.walkin ? $('f-people') : (b ? $('f-name') : $('f-phone'))).focus(); }, 80);
+  setTimeout(function () { (opts.walkin ? $('pplBtn') : (b ? $('f-name') : $('f-phone'))).focus(); }, 80);
   if (b && b.phone) lookup();
 }
-$('pMinus').addEventListener('click', function () { $('f-people').value = Math.max(1, (+$('f-people').value || 1) - 1); markPeople(); });
-$('pPlus').addEventListener('click', function () { $('f-people').value = Math.min(99, (+$('f-people').value || 0) + 1); markPeople(); });
 $('cancelForm').addEventListener('click', closeSheets);
 
 /* customer history by phone */
@@ -368,17 +367,38 @@ $('delBtn').addEventListener('click', function () {
     .catch(function (e) { $('formErr').textContent = errText(e); $('formErr').hidden = false; });
 });
 
-/* ---------------- people grid ---------------- */
+/* ---------------- people + table boxes (each opens its own picker, like i-host) ---------------- */
 (function () {
   var h = ''; for (var i = 1; i <= 24; i++) h += '<button type="button" data-n="' + i + '" aria-pressed="false">' + i + '</button>';
   $('pGrid').innerHTML = h;
 })();
 function markPeople() {
-  var n = parseInt($('f-people').value, 10);
+  var n = parseInt($('f-people').value, 10) || 0;
+  $('pplBtn').innerHTML = n ? '<span>' + n + ' <span class="ph">' + (n === 1 ? 'άτομο' : 'άτομα') + '</span></span>' : '<span class="ph">Επιλογή</span>';
   document.querySelectorAll('#pGrid button').forEach(function (b) { b.setAttribute('aria-pressed', +b.dataset.n === n); });
 }
-$('pGrid').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; $('f-people').value = b.dataset.n; markPeople(); openPicker(); }); /* like i-host: choosing people opens the table plan */
-$('f-people').addEventListener('input', markPeople);
+function markTable() {
+  var v = $('f-table').value.trim();
+  $('tblOpen').innerHTML = v ? '<span>' + esc(v) + '</span>' : '<span class="ph">Επιλογή</span>';
+}
+function ppMode(m) {
+  document.querySelectorAll('[data-pm]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.pm === m); });
+  $('pGrid').hidden = m !== 'pick'; $('ppType').hidden = m !== 'type';
+  if (m === 'type') { $('ppNum').value = $('f-people').value; setTimeout(function () { $('ppNum').focus(); $('ppNum').select(); }, 50); }
+}
+function openPeople() {
+  $('ppSub').textContent = fmtDate($('f-date').value || state.date) + ' · ' + $('f-time').value;
+  ppMode(+$('f-people').value > 24 ? 'type' : 'pick'); markPeople(); $('pplPicker').hidden = false;
+}
+function closePeople() { $('pplPicker').hidden = true; try { $('pplBtn').focus({ preventScroll: true }); } catch (e) {} }
+function setPeople(n) { $('f-people').value = n; markPeople(); closePeople(); }
+$('pplBtn').addEventListener('click', openPeople);
+$('ppClose').addEventListener('click', closePeople);
+document.querySelectorAll('[data-pm]').forEach(function (b) { b.addEventListener('click', function () { ppMode(b.dataset.pm); }); });
+$('pGrid').addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) setPeople(b.dataset.n); });
+function ppTyped() { var n = parseInt($('ppNum').value, 10); if (n >= 1 && n <= 99) setPeople(n); else $('ppNum').focus(); }
+$('ppOk').addEventListener('click', ppTyped);
+$('ppNum').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); ppTyped(); } });
 
 /* ---------------- tables (plan + picker + editor) ---------------- */
 var TB = { list: [], loaded: false };
@@ -455,8 +475,8 @@ $('tpGrid').addEventListener('click', function (e) {
   var b = e.target.closest('.tcard'); if (!b) return; var n = b.dataset.t, i = tp.sel.indexOf(n);
   if (i >= 0) tp.sel.splice(i, 1); else tp.sel.push(n); renderPicker();
 });
-$('tpSave').addEventListener('click', function () { $('f-table').value = tp.sel.join('+'); closePicker(); });
-$('tpClear').addEventListener('click', function () { $('f-table').value = ''; closePicker(); });
+$('tpSave').addEventListener('click', function () { $('f-table').value = tp.sel.join('+'); markTable(); closePicker(); });
+$('tpClear').addEventListener('click', function () { $('f-table').value = ''; markTable(); closePicker(); });
 
 /* editor */
 var te = { rows: [], removed: [] };
