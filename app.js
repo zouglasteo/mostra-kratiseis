@@ -385,7 +385,7 @@ function markTable() {
 }
 function ppMode(m) {
   document.querySelectorAll('[data-pm]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.pm === m); });
-  $('pGrid').hidden = m !== 'pick'; $('ppType').hidden = m !== 'type';
+  $('pGrid').hidden = m !== 'pick'; $('ppHint').hidden = m !== 'pick'; $('ppType').hidden = m !== 'type';
   if (m === 'type') { $('ppNum').value = $('f-people').value; setTimeout(function () { $('ppNum').focus(); $('ppNum').select(); }, 50); }
 }
 function openPeople() {
