@@ -6,7 +6,7 @@ var C = window.MOSTRA_CONFIG || {};
 var CFG = {
   open: C.open || '12:30', lastArrival: C.lastArrival || '22:30', step: C.step || 15,
   closedDays: C.closedDays || [1], lunchEnds: C.lunchEnds || '17:00',
-  capacity: C.capacity || 60, slotLimit: C.slotLimit || 20,
+  capacity: C.capacity || 100, onlineCapacity: C.onlineCapacity || 60, slotLimit: C.slotLimit || 20,
   tags: C.tags || ['Γενέθλια', 'Επέτειος', 'Αλλεργία']
 };
 var DEMO = !C.SUPABASE_URL || !C.SUPABASE_ANON_KEY;
@@ -139,7 +139,7 @@ var client = null, store = null, unsub = null, loadTimer = null, current = null,
 var times = []; for (var m = mins(CFG.open); m <= mins('23:00'); m += CFG.step) times.push(hhmm(m));
 $('f-time').innerHTML = times.map(function (t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
 $('f-tags').innerHTML = CFG.tags.map(function (t, i) { return '<button type="button" id="tag-' + i + '" data-tag="' + esc(t) + '" aria-pressed="false">' + esc(t) + '</button>'; }).join('');
-$('limitLbl').textContent = 'όριο ' + CFG.slotLimit + ' άτομα';
+$('limitLbl').textContent = 'όριο online ' + CFG.slotLimit + ' άτομα';
 
 /* ---------------- rendering ---------------- */
 function visible() {
@@ -160,6 +160,8 @@ function notes() {
   if (DEMO) h += '<div class="note-bar demo">Δοκιμαστική λειτουργία: οι κρατήσεις μένουν μόνο σε αυτή τη συσκευή.</div>';
   if (!state.online) h += '<div class="note-bar bad">Χωρίς σύνδεση στο ίντερνετ. Βλέπετε την τελευταία λίστα που φορτώθηκε, και οι αλλαγές δεν θα αποθηκευτούν.</div>';
   if (state.loadError) h += '<div class="note-bar bad">' + esc(state.loadError) + '</div>';
+  var booked = state.bookings.filter(function (b) { return b.status !== 'cancelled' && b.status !== 'noshow'; }).reduce(function (n, b) { return n + (+b.people || 0); }, 0);
+  if (booked >= CFG.onlineCapacity && CFG.closedDays.indexOf(d.getDay()) < 0) h += '<div class="note-bar">' + booked + ' άτομα: έκλεισαν οι online κρατήσεις για αυτή τη μέρα (όριο ' + CFG.onlineCapacity + '). Από τηλέφωνο μπορείτε να περάσετε έως ' + CFG.capacity + '.</div>';
   if (CFG.closedDays.indexOf(d.getDay()) >= 0) h += '<div class="note-bar bad">' + DAYS_LONG[d.getDay()] + ': το μαγαζί είναι κλειστό.</div>';
   $('notes').innerHTML = h;
 }
